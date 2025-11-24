@@ -11,6 +11,7 @@ import numpy as np
 import joblib
 
 from catboost import CatBoostRegressor
+from dateutil import parser as dateparser
 
 # ==============================
 # Gemini SDK setup (optional)
@@ -104,56 +105,59 @@ trucks_model = joblib.load(TRUCKS_MODEL_PATH)
 # ==============================
 def extract_params_from_query(query: str) -> Dict[str, Any]:
     """
-    Uses Gemini to extract date, time, store_id, dept_id from a natural language query.
-    Requires GEMINI_API_KEY and google-generativeai installed.
+    Extracts date/time (and optionally store/dept) from the user's query.
+    Uses Gemini when available; otherwise falls back to dateutil fuzzy parsing.
     """
-    if gemini_model is None:
-        raise RuntimeError(
-            "Gemini API not available. "
-            "Set GEMINI_API_KEY and install google-generativeai to use NLP parsing."
+    # Use Gemini if configured
+    if gemini_model is not None:
+        prompt = (
+            "You are a strict JSON parser.\n\n"
+            "Extract the following fields from the user query.\n\n"
+            "User query:\n"
+            f'"""{query}"""\n\n'
+            "Return ONLY valid JSON with this exact structure (no extra text):\n\n"
+            "{\n"
+            '  "date": "YYYY-MM-DD or null if unknown",\n'
+            '  "time": "HH:MM or null if not provided",\n'
+            '  "store_id": "store id as string or null",\n'
+            '  "dept_id": "department id as string or null"\n'
+            "}\n"
         )
 
-    prompt = f"""
-You are a strict JSON parser.
+        response = gemini_model.generate_content(prompt)
+        text = response.text.strip()
+        try:
+            if "{" in text and "}" in text:
+                text = text[text.find("{"): text.rfind("}") + 1]
+            data = json.loads(text)
+        except Exception as e:
+            raise RuntimeError(f"Could not parse JSON from Gemini response: {text}") from e
 
-Extract the following fields from the user query.
+        date_val = data.get("date")
+        time_val = data.get("time")
+        store_id = data.get("store_id")
+        dept_id = data.get("dept_id")
 
-User query:
-\"\"\"{query}\"\"\"
+        return {
+            "date": date_val if date_val not in ("", "null", None) else None,
+            "time": time_val if time_val not in ("", "null", None) else None,
+            "store_id": str(store_id) if store_id not in ("", "null", None) else None,
+            "dept_id": str(dept_id) if dept_id not in ("", "null", None) else None,
+        }
 
-Return ONLY valid JSON with this exact structure (no extra text):
-
-{{
-  "date": "YYYY-MM-DD or null if unknown",
-  "time": "HH:MM or null if not provided",
-  "store_id": "store id as string or null",
-  "dept_id": "department id as string or null"
-}}
-"""
-
-    response = gemini_model.generate_content(prompt)
-    text = response.text.strip()
-
-    # Try to isolate JSON object
+    # Fallback: use dateutil fuzzy parsing to extract a date/time
     try:
-        if "{" in text and "}" in text:
-            text = text[text.find("{"): text.rfind("}") + 1]
-        data = json.loads(text)
-    except Exception as e:
-        raise RuntimeError(f"Could not parse JSON from Gemini response: {text}") from e
+        dt = dateparser.parse(query, fuzzy=True)
+        if dt:
+            parsed_date = dt.date().isoformat()
+            parsed_time = None
+            if not (dt.hour == 0 and dt.minute == 0 and dt.second == 0):
+                parsed_time = f"{dt.hour:02d}:{dt.minute:02d}"
+            return {"date": parsed_date, "time": parsed_time, "store_id": None, "dept_id": None}
+    except Exception:
+        pass
 
-    # Normalize types
-    date_val = data.get("date")
-    time_val = data.get("time")
-    store_id = data.get("store_id")
-    dept_id = data.get("dept_id")
-
-    return {
-        "date": date_val if date_val not in ("", "null", None) else None,
-        "time": time_val if time_val not in ("", "null", None) else None,
-        "store_id": str(store_id) if store_id not in ("", "null", None) else None,
-        "dept_id": str(dept_id) if dept_id not in ("", "null", None) else None,
-    }
+    return {"date": None, "time": None, "store_id": None, "dept_id": None}
 
 
 # ==============================
