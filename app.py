@@ -32,6 +32,7 @@ else:
 # ==============================
 # Paths and constants
 # ==============================
+path_csv = "https://drive.google.com/file/d/1hlt8iiILix5PVGoQJjXdtqdULXwRYkKQ/view?usp=drive_link"
 CSV_PATH = "/Users/emilgeorgemathew/Documents/Wallmart/merged_data_new.csv"
 CASES_MODEL_PATH = "best_cases_catboost_ts_cv.cbm"
 TRUCKS_MODEL_PATH = "best_trucks_ts_cv.pkl"
