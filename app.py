@@ -96,10 +96,16 @@ cases_model = CatBoostRegressor()
 cases_model.load_model(CASES_MODEL_PATH)
 
 # ==============================
-# FastAPI setup
+# FastAPI setup (docs explicitly enabled)
 # ==============================
 
-app = FastAPI(title="Trucks & Cases Prediction API", version="1.0.0")
+app = FastAPI(
+    title="Trucks & Cases Prediction API",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+)
 
 
 class QueryRequest(BaseModel):
@@ -149,7 +155,7 @@ STATE_MAP = {
 def normalize_state_name(raw_state: Optional[str], full_text: str) -> Optional[str]:
     """Ensure state_name is 2-letter code. Use Gemini output OR fallback to text scan."""
     if raw_state:
-        s = raw_state.strip()
+        s = str(raw_state).strip()
         if len(s) == 2:
             return s.upper()
         low = s.lower()
@@ -211,6 +217,7 @@ def extract_features_local(user_query: str) -> Dict[str, Any]:
             else:
                 data[k] = v
 
+    # Date: ISO first, then fuzzy
     if "dt" not in data or not data.get("dt"):
         iso_match = re.search(r"\d{4}-\d{2}-\d{2}", s)
         if iso_match:
@@ -278,13 +285,12 @@ def extract_features_with_gemini(user_query: str) -> Dict[str, Any]:
         end = text.rfind("}")
         if start == -1 or end == -1:
             raise ValueError(f"Gemini extraction not valid JSON: {text}")
-        json_str = text[start : end + 1]
+        json_str = text[start: end + 1]
         data = json.loads(json_str)
 
     if not isinstance(data, dict):
         raise ValueError("Gemini output is not a JSON object")
 
-    # Ensure all expected keys exist (fill with None if missing)
     keys = [
         "dt", "state_name", "store_id", "dept_id", "gmm_name", "dmm_name",
         "dept_desc", "day_of_week", "holiday_name", "dept_near_holiday_5",
@@ -293,10 +299,8 @@ def extract_features_with_gemini(user_query: str) -> Dict[str, Any]:
     for k in keys:
         data.setdefault(k, None)
 
-    # Normalize state code
     data["state_name"] = normalize_state_name(data.get("state_name"), user_query)
 
-    # If dt is still null or empty, try fuzzy parse from the original query
     if not data.get("dt"):
         inferred = infer_date_from_text(user_query)
         if inferred:
@@ -310,12 +314,30 @@ def extract_features_with_gemini(user_query: str) -> Dict[str, Any]:
 # ==============================
 
 def parse_date(dt_str: Optional[str]) -> datetime:
+    """
+    Parse a date string from Gemini or local extractor.
+
+    Handles:
+    - ISO '2025-01-01'
+    - Natural 'Jan 1 2025', etc.
+    """
     if dt_str is None:
         raise ValueError("Extracted date (dt) is null")
+
+    dt_str = str(dt_str).strip()
+
+    # Try ISO first
     try:
         return datetime.fromisoformat(dt_str[:10])
+    except Exception:
+        pass
+
+    # Fuzzy fallback
+    try:
+        dt = date_parser.parse(dt_str, fuzzy=True, dayfirst=False)
+        return dt
     except Exception as e:
-        raise ValueError(f"Invalid dt format from extractor: {dt_str}") from e
+        raise ValueError(f"Could not parse date string: {dt_str}") from e
 
 
 def get_historical_values_if_available(dt: datetime) -> Optional[Dict[str, float]]:
@@ -340,7 +362,6 @@ def build_feature_row(extracted: Dict[str, Any], dt: datetime) -> pd.DataFrame:
             continue
 
         value = extracted.get(col, None)
-
         if value is None:
             if col in NUMERIC_FEATURE_MEANS:
                 value = NUMERIC_FEATURE_MEANS[col]
