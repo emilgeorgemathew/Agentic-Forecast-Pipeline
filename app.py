@@ -126,7 +126,7 @@ class PredictionResponse(BaseModel):
 
 def infer_date_from_text(text: str) -> Optional[str]:
     """
-    Fuzzy parse any date string like 'Jan 1 2025' -> '2025-01-01'.
+    Fuzzy parse any date string like 'Dec 1 2025' -> '2025-12-01'.
     Returns ISO date string or None.
     """
     try:
@@ -304,7 +304,7 @@ def extract_features_with_gemini(user_query: str) -> Dict[str, Any]:
 
     data["state_name"] = normalize_state_name(data.get("state_name"), user_query)
 
-    # DON'T trust dt blindly — date will be resolved later from multiple sources
+    # We don't rely solely on dt from Gemini; date is resolved later.
     return data
 
 
@@ -377,22 +377,26 @@ def get_historical_values_if_available(dt: datetime) -> Optional[Dict[str, float
 
 
 def build_feature_row(extracted: Dict[str, Any], dt: datetime) -> pd.DataFrame:
+    """
+    Build a single-row DataFrame containing BOTH numeric and categorical
+    columns (for debugging), but the models will only consume NUMERIC_FEATURES.
+    """
     row: Dict[str, Any] = {}
     row["is_weekend"] = 1 if dt.weekday() >= 5 else 0
 
+    # Numeric
     for col in NUMERIC_FEATURES:
         if col == "is_weekend":
             continue
-
         value = extracted.get(col, None)
         if value is None:
             if col in NUMERIC_FEATURE_MEANS:
                 value = NUMERIC_FEATURE_MEANS[col]
             else:
                 value = 0.0
-
         row[col] = value
 
+    # Categorical (kept in the DataFrame, but not fed to the model)
     for col in CATEGORICAL_FEATURES:
         row[col] = extracted.get(col, None)
 
@@ -400,8 +404,14 @@ def build_feature_row(extracted: Dict[str, Any], dt: datetime) -> pd.DataFrame:
 
 
 def predict_with_models(feature_row: pd.DataFrame) -> Dict[str, float]:
-    trucks_pred = float(trucks_model.predict(feature_row)[0])
-    cases_pred = float(cases_model.predict(feature_row)[0])
+    """
+    IMPORTANT: Models only see NUMERIC_FEATURES.
+    Categorical columns (with strings like 'MD') are ignored here.
+    """
+    X_num = feature_row[NUMERIC_FEATURES].copy()
+
+    trucks_pred = float(trucks_model.predict(X_num)[0])
+    cases_pred = float(cases_model.predict(X_num)[0])
 
     try:
         trucks_rounded = int(round(trucks_pred))
@@ -439,7 +449,7 @@ def predict_trucks_and_cases(req: QueryRequest):
     except Exception:
         extracted = extract_features_local(req.query)
 
-    # 2. Resolve date from extractor + raw text (robust)
+    # 2. Resolve date robustly
     try:
         dt = resolve_date(extracted, req.query)
     except Exception as e:
