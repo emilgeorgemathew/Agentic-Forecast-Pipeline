@@ -183,4 +183,3 @@ def predict_api(req: QueryRequest):
         raw_extracted={"dt": str(dt), "state_name": state},
     )
 
-
