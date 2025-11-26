@@ -125,7 +125,10 @@ class PredictionResponse(BaseModel):
 # ==============================
 
 def infer_date_from_text(text: str) -> Optional[str]:
-    """Fuzzy parse any date string like 'Jan 1 2025' -> '2025-01-01'."""
+    """
+    Fuzzy parse any date string like 'Jan 1 2025' -> '2025-01-01'.
+    Returns ISO date string or None.
+    """
     try:
         dt = date_parser.parse(text, fuzzy=True, dayfirst=False)
         return dt.date().isoformat()
@@ -301,44 +304,64 @@ def extract_features_with_gemini(user_query: str) -> Dict[str, Any]:
 
     data["state_name"] = normalize_state_name(data.get("state_name"), user_query)
 
-    if not data.get("dt"):
-        inferred = infer_date_from_text(user_query)
-        if inferred:
-            data["dt"] = inferred
-
+    # DON'T trust dt blindly — date will be resolved later from multiple sources
     return data
 
 
 # ==============================
-# Feature building utilities
+# Date resolution
 # ==============================
 
-def parse_date(dt_str: Optional[str]) -> datetime:
-    """
-    Parse a date string from Gemini or local extractor.
-
-    Handles:
-    - ISO '2025-01-01'
-    - Natural 'Jan 1 2025', etc.
-    """
-    if dt_str is None:
-        raise ValueError("Extracted date (dt) is null")
-
+def parse_date_str(dt_str: str) -> datetime:
+    """Parse a date string using ISO first, then fuzzy."""
     dt_str = str(dt_str).strip()
-
-    # Try ISO first
+    # Try ISO (YYYY-MM-DD)
     try:
         return datetime.fromisoformat(dt_str[:10])
     except Exception:
         pass
+    # Fuzzy
+    dt = date_parser.parse(dt_str, fuzzy=True, dayfirst=False)
+    return dt
 
-    # Fuzzy fallback
-    try:
-        dt = date_parser.parse(dt_str, fuzzy=True, dayfirst=False)
-        return dt
-    except Exception as e:
-        raise ValueError(f"Could not parse date string: {dt_str}") from e
 
+def resolve_date(extracted: Dict[str, Any], query_text: str) -> datetime:
+    """
+    Try multiple ways to get a valid date:
+    1. extracted['dt'] (from Gemini/local)
+    2. explicit ISO date in the query (YYYY-MM-DD)
+    3. fuzzy parse of the whole query
+    """
+    candidates = []
+
+    # 1) From extracted['dt']
+    raw_dt = extracted.get("dt")
+    if raw_dt:
+        candidates.append(str(raw_dt))
+
+    # 2) Explicit ISO date in query
+    iso_match = re.search(r"\d{4}-\d{2}-\d{2}", query_text)
+    if iso_match:
+        candidates.append(iso_match.group(0))
+
+    # 3) Fuzzy parse full query
+    fuzzy_iso = infer_date_from_text(query_text)
+    if fuzzy_iso:
+        candidates.append(fuzzy_iso)
+
+    # Try candidates in order
+    for c in candidates:
+        try:
+            return parse_date_str(c)
+        except Exception:
+            continue
+
+    raise ValueError("Could not find any valid date in query")
+
+
+# ==============================
+# Other feature utilities
+# ==============================
 
 def get_historical_values_if_available(dt: datetime) -> Optional[Dict[str, float]]:
     if dt < MIN_DATE or dt > MAX_DATE:
@@ -416,19 +439,13 @@ def predict_trucks_and_cases(req: QueryRequest):
     except Exception:
         extracted = extract_features_local(req.query)
 
-    # 2. Final dt safety net: if still missing/null, infer directly from query text
-    if not extracted.get("dt"):
-        inferred = infer_date_from_text(req.query)
-        if inferred:
-            extracted["dt"] = inferred
-
-    # 3. Parse date
+    # 2. Resolve date from extractor + raw text (robust)
     try:
-        dt = parse_date(extracted.get("dt"))
+        dt = resolve_date(extracted, req.query)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid date from query: {e}")
 
-    # 4. Check historical data
+    # 3. Check historical data
     hist_values = get_historical_values_if_available(dt)
     if hist_values is not None:
         return PredictionResponse(
@@ -439,7 +456,7 @@ def predict_trucks_and_cases(req: QueryRequest):
             raw_extracted=extracted,
         )
 
-    # 5. Model prediction
+    # 4. Model prediction
     try:
         feature_row = build_feature_row(extracted, dt)
         preds = predict_with_models(feature_row)
