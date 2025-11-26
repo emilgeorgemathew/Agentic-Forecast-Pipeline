@@ -12,14 +12,12 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
 from google import genai
-from google.genai import types
-
 from catboost import CatBoostRegressor
 
 
-# ==============================
-# CONSTANTS
-# ==============================
+# =============================================================================
+# FEATURE DEFINITIONS
+# =============================================================================
 
 NUMERIC_FEATURES = [
     "is_weekend", "lag_35", "lag_42", "lag_49", "rolling_mean_35_7",
@@ -52,25 +50,28 @@ DATE_PATTERNS = [
 ]
 
 
-# ==============================
+# =============================================================================
 # LOAD FILES
-# ==============================
+# =============================================================================
 
 FEATURE_MEANS_PATH = "feature_means.json"
 DATE_TRUCKS_CASES_PATH = "date_trucks_cases.csv"
 TRUCKS_MODEL_PATH = "best_trucks_ts_cv.pkl"
 CASES_MODEL_PATH = "best_cases_catboost_ts_cv.cbm"
 
+# Load feature means
 with open(FEATURE_MEANS_PATH, "r") as f:
     means_payload = json.load(f)
 
 NUMERIC_FEATURE_MEANS = means_payload["numeric_feature_means"]
 
+# Load historical data
 df_hist = pd.read_csv(DATE_TRUCKS_CASES_PATH, parse_dates=["dt"])
 df_hist = df_hist.sort_values("dt")
 MIN_DATE = df_hist["dt"].min()
 MAX_DATE = df_hist["dt"].max()
 
+# Load models
 with open(TRUCKS_MODEL_PATH, "rb") as f:
     trucks_model = pickle.load(f)
 
@@ -78,9 +79,9 @@ cases_model = CatBoostRegressor()
 cases_model.load_model(CASES_MODEL_PATH)
 
 
-# ==============================
-# GEMINI CLIENT
-# ==============================
+# =============================================================================
+# GEMINI CLIENT (NEW SDK v1beta)
+# =============================================================================
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_KEY)
@@ -93,30 +94,27 @@ Return ONLY JSON with keys:
 "day_of_week","holiday_name","dept_near_holiday_5","dept_near_holiday_10",
 "dept_weekday","dept_holiday_interact"].
 
-Infer state codes (Maryland → MD).
+Infer US state codes (e.g., Maryland → MD).
 If unknown → set null.
 """
 
 
-# ==============================
-# MODELS
-# ==============================
-
-class QueryRequest(BaseModel):
-    query: str
-
-
-class PredictionResponse(BaseModel):
-    date: str
-    source: str
-    Cases: float
-    trucks: float
-    raw_extracted: dict
+def extract_with_gemini(user_query: str) -> dict:
+    """Call Gemini using the new google-genai SDK."""
+    try:
+        response = client.responses.generate(
+            model="gemini-1.5-flash-latest",
+            input=[EXTRACT_PROMPT, user_query],
+        )
+        text = response.output_text
+        return json.loads(text)
+    except:
+        return {}    # fallback if model fails
 
 
-# ==============================
-# HELPERS
-# ==============================
+# =============================================================================
+# DATE EXTRACTION
+# =============================================================================
 
 def extract_date_substring(text: str):
     text = text.lower()
@@ -139,6 +137,10 @@ def robust_date_parse(full_query: str) -> datetime:
     return dt
 
 
+# =============================================================================
+# MODEL PIPELINE HELPERS
+# =============================================================================
+
 def get_historical(dt: datetime):
     if dt < MIN_DATE or dt > MAX_DATE:
         return None
@@ -152,8 +154,10 @@ def get_historical(dt: datetime):
 def build_feature_row(extracted: dict, dt: datetime):
     row = {}
 
+    # Weekend
     row["is_weekend"] = 1 if dt.weekday() >= 5 else 0
 
+    # Numeric features
     for col in NUMERIC_FEATURES:
         if col == "is_weekend":
             continue
@@ -162,22 +166,35 @@ def build_feature_row(extracted: dict, dt: datetime):
             val = NUMERIC_FEATURE_MEANS.get(col, 0.0)
         row[col] = val
 
+    # Categorical features
     for col in CATEGORICAL_FEATURES:
         row[col] = extracted.get(col)
 
     return pd.DataFrame([row])
 
 
-def predict(feature_row: pd.DataFrame):
+def predict_models(feature_row: pd.DataFrame):
     t_pred = float(trucks_model.predict(feature_row)[0])
-    t_int = max(1, min(4, round(t_pred)))
+    t_clamped = max(1, min(4, round(t_pred)))
     c_pred = float(cases_model.predict(feature_row)[0])
-    return {"trucks": float(t_int), "cases": float(c_pred)}
+    return {"trucks": float(t_clamped), "cases": float(c_pred)}
 
 
-# ==============================
+# =============================================================================
 # FASTAPI
-# ==============================
+# =============================================================================
+
+class QueryRequest(BaseModel):
+    query: str
+
+
+class PredictionResponse(BaseModel):
+    date: str
+    source: str
+    Cases: float
+    trucks: float
+    raw_extracted: dict
+
 
 app = FastAPI(title="Trucks & Cases Prediction API", version="1.0.0")
 
@@ -195,18 +212,10 @@ def health():
 @app.post("/predict", response_model=PredictionResponse)
 def predict_api(req: QueryRequest):
 
-    # 1. Ask Gemini to structure the text
-    gen = client.models.generate_content(
-        model="gemini-1.5-flash",
-        contents=[EXTRACT_PROMPT, req.query]
-    )
+    # 1. Gemini extraction
+    extracted = extract_with_gemini(req.query)
 
-    try:
-        extracted = json.loads(gen.text)
-    except:
-        extracted = {}
-
-    # 2. Date parsing (using full query ensures robustness)
+    # 2. Date parsing
     try:
         dt = robust_date_parse(req.query)
     except Exception as e:
@@ -223,11 +232,10 @@ def predict_api(req: QueryRequest):
             raw_extracted=extracted
         )
 
-    # 4. Build features + predict
-    feat = build_feature_row(extracted, dt)
-
+    # 4. Model prediction
     try:
-        out = predict(feat)
+        feat = build_feature_row(extracted, dt)
+        out = predict_models(feat)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model Prediction Error: {e}")
 
