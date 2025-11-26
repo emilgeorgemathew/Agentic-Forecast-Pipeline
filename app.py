@@ -96,7 +96,7 @@ cases_model = CatBoostRegressor()
 cases_model.load_model(CASES_MODEL_PATH)
 
 # ==============================
-# FastAPI setup (docs explicitly enabled)
+# FastAPI setup (docs enabled)
 # ==============================
 
 app = FastAPI(
@@ -125,7 +125,7 @@ class PredictionResponse(BaseModel):
 # ==============================
 
 def infer_date_from_text(text: str) -> Optional[str]:
-    """Fuzzy parse any date string like 'jan 1 2025' -> '2025-01-01'."""
+    """Fuzzy parse any date string like 'Jan 1 2025' -> '2025-01-01'."""
     try:
         dt = date_parser.parse(text, fuzzy=True, dayfirst=False)
         return dt.date().isoformat()
@@ -416,13 +416,19 @@ def predict_trucks_and_cases(req: QueryRequest):
     except Exception:
         extracted = extract_features_local(req.query)
 
-    # 2. Parse date
+    # 2. Final dt safety net: if still missing/null, infer directly from query text
+    if not extracted.get("dt"):
+        inferred = infer_date_from_text(req.query)
+        if inferred:
+            extracted["dt"] = inferred
+
+    # 3. Parse date
     try:
         dt = parse_date(extracted.get("dt"))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid date from query: {e}")
 
-    # 3. Check historical data
+    # 4. Check historical data
     hist_values = get_historical_values_if_available(dt)
     if hist_values is not None:
         return PredictionResponse(
@@ -433,7 +439,7 @@ def predict_trucks_and_cases(req: QueryRequest):
             raw_extracted=extracted,
         )
 
-    # 4. Model prediction
+    # 5. Model prediction
     try:
         feature_row = build_feature_row(extracted, dt)
         preds = predict_with_models(feature_row)
