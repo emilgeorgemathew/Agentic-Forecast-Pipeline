@@ -11,11 +11,6 @@ from typing import Optional, Dict, Any
 
 from catboost import CatBoostRegressor
 
-# NOTE: Google GenAI is intentionally disabled. Extraction is handled
-# locally by a simple parser that accepts either a JSON object string
-# or space-separated key:value (or key=value) pairs. This avoids
-# depending on `google`/GenAI packages.
-
 # ==============================
 # Feature definitions (must match training)
 # ==============================
@@ -111,41 +106,19 @@ class PredictionResponse(BaseModel):
 
 
 # ==============================
-# Gemini-powered extraction
+# Local extraction helper
 # ==============================
-
-EXTRACTION_SYSTEM_PROMPT = """
-You are a strict JSON information extractor for a retail logistics forecasting system.
-
-Given a natural language query about trucks and cases,
-you MUST return a single JSON object with exactly these keys:
-
-- "dt": date in ISO format "YYYY-MM-DD" (if not given, guess from context or today)
-- "state_name": 2-letter US state code like "MD", "NH", "CA" (uppercase). If not mentioned, use null.
-- "store_id": integer store id if mentioned, otherwise null
-- "dept_id": integer department id if mentioned, otherwise null
-- "gmm_name": string or null
-- "dmm_name": string or null
-- "dept_desc": string or null
-- "day_of_week": string name like "Monday", "Tuesday" etc or null
-- "holiday_name": string holiday name like "Christmas", "Easter", "Labor Day" etc or null
-- "dept_near_holiday_5": 0 or 1 or null
-- "dept_near_holiday_10": 0 or 1 or null
-- "dept_weekday": string categorization like "weekday" or "weekend" or null
-- "dept_holiday_interact": string like "holiday", "non_holiday" or null
-
-Rules:
-- Output ONLY raw JSON, no backticks, no prose.
-- If something is not specified and you cannot safely infer it, set it to null.
-- "state_name" MUST be a 2-letter code if you can infer the state (e.g., Maryland -> "MD").
-"""
-
 
 def extract_features_local(user_query: str) -> Dict[str, Any]:
     """
-    Local extraction fallback. Supports either:
+    Local extraction. Supports either:
       - A JSON object string (e.g. '{"dt":"2025-11-25","store_id":123}')
-      - Space-separated key:value or key=value tokens (e.g. 'dt:2025-11-25 store_id:123')
+      - Space-separated key:value or key=value tokens
+        (e.g. 'dt:2025-11-25 store_id:123 state_name:MD')
+
+    Also:
+      - If 'Maryland' / 'maryland' appears, sets state_name='MD', etc.
+      - If a 2-letter state code appears as a token, uses that.
 
     If dt is missing, attempts to find an ISO date inside the text.
     """
@@ -153,41 +126,80 @@ def extract_features_local(user_query: str) -> Dict[str, Any]:
     if not s:
         raise ValueError("Empty query provided for extraction")
 
-    # JSON object string
+    # 1) Try JSON object
     if s.startswith("{"):
         try:
-            return json.loads(s)
+            data = json.loads(s)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON extraction string: {e}") from e
+    else:
+        # 2) key:value or key=value parser
+        data: Dict[str, Any] = {}
+        tokens = re.split(r"\s+", s)
+        for token in tokens:
+            if ":" in token:
+                k, v = token.split(":", 1)
+            elif "=" in token:
+                k, v = token.split("=", 1)
+            else:
+                continue
+            k = k.strip()
+            v = v.strip()
+            if not k:
+                continue
 
-    # key:value or key=value parser
-    data: Dict[str, Any] = {}
-    tokens = re.split(r"\s+", s)
-    for token in tokens:
-        if ":" in token:
-            k, v = token.split(":", 1)
-        elif "=" in token:
-            k, v = token.split("=", 1)
-        else:
-            continue
-        k = k.strip()
-        v = v.strip()
-        if not k:
-            continue
-        # Type conversions for a few common fields
-        if k in ("store_id", "dept_id"):
-            try:
-                data[k] = int(v)
-            except Exception:
-                data[k] = None
-        else:
-            data[k] = v
+            if k in ("store_id", "dept_id"):
+                try:
+                    data[k] = int(v)
+                except Exception:
+                    data[k] = None
+            else:
+                data[k] = v
 
-    # attempt to find ISO date if not provided
-    if "dt" not in data:
+    # 3) If dt missing, look for ISO date yyyy-mm-dd in the whole text
+    if "dt" not in data or data.get("dt") in (None, ""):
         m = re.search(r"\d{4}-\d{2}-\d{2}", s)
         if m:
             data["dt"] = m.group(0)
+
+    # 4) State name mapping (full name or 2-letter code)
+    if "state_name" not in data or not data.get("state_name"):
+        state_map = {
+            "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+            "california": "CA", "colorado": "CO", "connecticut": "CT",
+            "delaware": "DE", "florida": "FL", "georgia": "GA", "hawaii": "HI",
+            "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+            "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME",
+            "maryland": "MD", "massachusetts": "MA", "michigan": "MI",
+            "minnesota": "MN", "mississippi": "MS", "missouri": "MO",
+            "montana": "MT", "nebraska": "NE", "nevada": "NV",
+            "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM",
+            "new york": "NY", "north carolina": "NC", "north dakota": "ND",
+            "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
+            "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+            "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT",
+            "virginia": "VA", "washington": "WA", "west virginia": "WV",
+            "wisconsin": "WI", "wyoming": "WY",
+        }
+
+        lower_text = s.lower()
+        matched_code = None
+
+        # full-name matches first
+        for full_name, code in state_map.items():
+            if full_name in lower_text:
+                matched_code = code
+                break
+
+        # if nothing yet, look for 2-letter code tokens
+        if not matched_code:
+            for token in re.split(r"\W+", s.upper()):
+                if token in state_map.values():
+                    matched_code = token
+                    break
+
+        if matched_code:
+            data["state_name"] = matched_code
 
     return data
 
@@ -272,7 +284,21 @@ def predict_with_models(feature_row: pd.DataFrame) -> Dict[str, float]:
 
 
 # ==============================
-# API endpoint
+# Health + root endpoints
+# ==============================
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Trucks & Cases Prediction API"}
+
+
+# ==============================
+# Prediction endpoint
 # ==============================
 
 @app.post("/predict", response_model=PredictionResponse)
