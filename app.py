@@ -3,13 +3,25 @@ import json
 import pickle
 import re
 from datetime import datetime
+from typing import Optional, Dict, Any
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
-
 from catboost import CatBoostRegressor
+from dateutil import parser as date_parser
+from google import genai
+
+# ==============================
+# Gemini client
+# ==============================
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("Missing GEMINI_API_KEY or GOOGLE_API_KEY in environment")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL_NAME", "gemini-1.5-flash")
 
 # ==============================
 # Feature definitions (must match training)
@@ -50,9 +62,6 @@ with open(FEATURE_MEANS_PATH, "r") as f:
     means_payload = json.load(f)
 
 NUMERIC_FEATURE_MEANS: Dict[str, float] = means_payload.get("numeric_feature_means", {})
-
-# If some numeric features have no mean (e.g., cases_prophet/trucks_prophet),
-# we will default them to 0.0 at feature construction time.
 
 # ==============================
 # Load historical date/trucks/cases
@@ -106,34 +115,80 @@ class PredictionResponse(BaseModel):
 
 
 # ==============================
-# Local extraction helper
+# Helpers
+# ==============================
+
+def infer_date_from_text(text: str) -> Optional[str]:
+    """Fuzzy parse any date string like 'jan 1 2025' -> '2025-01-01'."""
+    try:
+        dt = date_parser.parse(text, fuzzy=True, dayfirst=False)
+        return dt.date().isoformat()
+    except Exception:
+        return None
+
+
+STATE_MAP = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT",
+    "delaware": "DE", "florida": "FL", "georgia": "GA", "hawaii": "HI",
+    "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+    "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME",
+    "maryland": "MD", "massachusetts": "MA", "michigan": "MI",
+    "minnesota": "MN", "mississippi": "MS", "missouri": "MO",
+    "montana": "MT", "nebraska": "NE", "nevada": "NV",
+    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM",
+    "new york": "NY", "north carolina": "NC", "north dakota": "ND",
+    "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
+    "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+    "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT",
+    "virginia": "VA", "washington": "WA", "west virginia": "WV",
+    "wisconsin": "WI", "wyoming": "WY",
+}
+
+
+def normalize_state_name(raw_state: Optional[str], full_text: str) -> Optional[str]:
+    """Ensure state_name is 2-letter code. Use Gemini output OR fallback to text scan."""
+    if raw_state:
+        s = raw_state.strip()
+        if len(s) == 2:
+            return s.upper()
+        low = s.lower()
+        if low in STATE_MAP:
+            return STATE_MAP[low]
+
+    lower_text = full_text.lower()
+    for full_name, code in STATE_MAP.items():
+        if full_name in lower_text:
+            return code
+
+    for token in re.split(r"\W+", full_text.upper()):
+        if token in STATE_MAP.values():
+            return token
+
+    return None
+
+
+# ==============================
+# Local fallback extractor
 # ==============================
 
 def extract_features_local(user_query: str) -> Dict[str, Any]:
     """
-    Local extraction. Supports either:
-      - A JSON object string (e.g. '{"dt":"2025-11-25","store_id":123}')
-      - Space-separated key:value or key=value tokens
-        (e.g. 'dt:2025-11-25 store_id:123 state_name:MD')
-
-    Also:
-      - If 'Maryland' / 'maryland' appears, sets state_name='MD', etc.
-      - If a 2-letter state code appears as a token, uses that.
-
-    If dt is missing, attempts to find an ISO date inside the text.
+    Fallback extraction:
+      - JSON string or key:value / key=value pairs.
+      - Fuzzy date parsing.
+      - State code mapping.
     """
     s = (user_query or "").strip()
     if not s:
         raise ValueError("Empty query provided for extraction")
 
-    # 1) Try JSON object
     if s.startswith("{"):
         try:
             data = json.loads(s)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON extraction string: {e}") from e
     else:
-        # 2) key:value or key=value parser
         data: Dict[str, Any] = {}
         tokens = re.split(r"\s+", s)
         for token in tokens:
@@ -156,50 +211,96 @@ def extract_features_local(user_query: str) -> Dict[str, Any]:
             else:
                 data[k] = v
 
-    # 3) If dt missing, look for ISO date yyyy-mm-dd in the whole text
-    if "dt" not in data or data.get("dt") in (None, ""):
-        m = re.search(r"\d{4}-\d{2}-\d{2}", s)
-        if m:
-            data["dt"] = m.group(0)
+    if "dt" not in data or not data.get("dt"):
+        iso_match = re.search(r"\d{4}-\d{2}-\d{2}", s)
+        if iso_match:
+            data["dt"] = iso_match.group(0)
+        else:
+            inferred = infer_date_from_text(s)
+            if inferred:
+                data["dt"] = inferred
 
-    # 4) State name mapping (full name or 2-letter code)
-    if "state_name" not in data or not data.get("state_name"):
-        state_map = {
-            "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
-            "california": "CA", "colorado": "CO", "connecticut": "CT",
-            "delaware": "DE", "florida": "FL", "georgia": "GA", "hawaii": "HI",
-            "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
-            "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME",
-            "maryland": "MD", "massachusetts": "MA", "michigan": "MI",
-            "minnesota": "MN", "mississippi": "MS", "missouri": "MO",
-            "montana": "MT", "nebraska": "NE", "nevada": "NV",
-            "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM",
-            "new york": "NY", "north carolina": "NC", "north dakota": "ND",
-            "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
-            "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
-            "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT",
-            "virginia": "VA", "washington": "WA", "west virginia": "WV",
-            "wisconsin": "WI", "wyoming": "WY",
-        }
+    state = data.get("state_name")
+    data["state_name"] = normalize_state_name(state, s)
 
-        lower_text = s.lower()
-        matched_code = None
+    return data
 
-        # full-name matches first
-        for full_name, code in state_map.items():
-            if full_name in lower_text:
-                matched_code = code
-                break
 
-        # if nothing yet, look for 2-letter code tokens
-        if not matched_code:
-            for token in re.split(r"\W+", s.upper()):
-                if token in state_map.values():
-                    matched_code = token
-                    break
+# ==============================
+# Gemini extraction
+# ==============================
 
-        if matched_code:
-            data["state_name"] = matched_code
+EXTRACTION_SYSTEM_PROMPT = """
+You are a strict JSON information extractor for a retail logistics forecasting system.
+
+Given a natural language query about trucks and cases,
+you MUST return a single JSON object with exactly these keys:
+
+- "dt": date in ISO format "YYYY-MM-DD" (if the user mentions a date in any format, convert it;
+  otherwise infer from context or leave null)
+- "state_name": 2-letter US state code like "MD", "NH", "CA" (uppercase). If not mentioned, use null.
+- "store_id": integer store id if mentioned, otherwise null
+- "dept_id": integer department id if mentioned, otherwise null
+- "gmm_name": string or null
+- "dmm_name": string or null
+- "dept_desc": string or null
+- "day_of_week": string name like "Monday", "Tuesday" etc or null
+- "holiday_name": string holiday name like "Christmas", "Easter", "Labor Day" etc or null
+- "dept_near_holiday_5": 0 or 1 or null
+- "dept_near_holiday_10": 0 or 1 or null
+- "dept_weekday": string categorization like "weekday" or "weekend" or null
+- "dept_holiday_interact": string like "holiday", "non_holiday" or null
+
+Rules:
+- Output ONLY raw JSON, no backticks, no prose.
+- If something is not specified and you cannot safely infer it, set it to null.
+- "state_name" MUST be a 2-letter code if you can infer the state (e.g., Maryland -> "MD").
+"""
+
+
+def extract_features_with_gemini(user_query: str) -> Dict[str, Any]:
+    prompt = EXTRACTION_SYSTEM_PROMPT + "\n\nUser query:\n" + user_query
+
+    resp = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[{"role": "user", "parts": [prompt]}],
+    )
+
+    if not resp or not resp.candidates:
+        raise ValueError("Gemini returned no candidates")
+
+    text = resp.candidates[0].content.parts[0].text.strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1:
+            raise ValueError(f"Gemini extraction not valid JSON: {text}")
+        json_str = text[start : end + 1]
+        data = json.loads(json_str)
+
+    if not isinstance(data, dict):
+        raise ValueError("Gemini output is not a JSON object")
+
+    # Ensure all expected keys exist (fill with None if missing)
+    keys = [
+        "dt", "state_name", "store_id", "dept_id", "gmm_name", "dmm_name",
+        "dept_desc", "day_of_week", "holiday_name", "dept_near_holiday_5",
+        "dept_near_holiday_10", "dept_weekday", "dept_holiday_interact",
+    ]
+    for k in keys:
+        data.setdefault(k, None)
+
+    # Normalize state code
+    data["state_name"] = normalize_state_name(data.get("state_name"), user_query)
+
+    # If dt is still null or empty, try fuzzy parse from the original query
+    if not data.get("dt"):
+        inferred = infer_date_from_text(user_query)
+        if inferred:
+            data["dt"] = inferred
 
     return data
 
@@ -218,10 +319,6 @@ def parse_date(dt_str: Optional[str]) -> datetime:
 
 
 def get_historical_values_if_available(dt: datetime) -> Optional[Dict[str, float]]:
-    """
-    If date within min/max AND exists in historical CSV, return dict with trucks & cases.
-    Otherwise return None.
-    """
     if dt < MIN_DATE or dt > MAX_DATE:
         return None
     mask = df_hist["dt"] == dt
@@ -235,17 +332,9 @@ def get_historical_values_if_available(dt: datetime) -> Optional[Dict[str, float
 
 
 def build_feature_row(extracted: Dict[str, Any], dt: datetime) -> pd.DataFrame:
-    """
-    Build a single-row DataFrame with all required features.
-    Numeric features not provided by extractor use the precomputed means.
-    Some easy, date-based features (e.g. is_weekend) are computed directly.
-    """
     row: Dict[str, Any] = {}
-
-    # Date-based numeric feature
     row["is_weekend"] = 1 if dt.weekday() >= 5 else 0
 
-    # Fill remaining numeric features from extracted (if present) or means
     for col in NUMERIC_FEATURES:
         if col == "is_weekend":
             continue
@@ -253,7 +342,6 @@ def build_feature_row(extracted: Dict[str, Any], dt: datetime) -> pd.DataFrame:
         value = extracted.get(col, None)
 
         if value is None:
-            # fallback to precomputed mean or 0.0 if not available
             if col in NUMERIC_FEATURE_MEANS:
                 value = NUMERIC_FEATURE_MEANS[col]
             else:
@@ -261,7 +349,6 @@ def build_feature_row(extracted: Dict[str, Any], dt: datetime) -> pd.DataFrame:
 
         row[col] = value
 
-    # Categorical features straight from extracted
     for col in CATEGORICAL_FEATURES:
         row[col] = extracted.get(col, None)
 
@@ -272,7 +359,6 @@ def predict_with_models(feature_row: pd.DataFrame) -> Dict[str, float]:
     trucks_pred = float(trucks_model.predict(feature_row)[0])
     cases_pred = float(cases_model.predict(feature_row)[0])
 
-    # Round trucks to nearest integer and clamp to 1..4
     try:
         trucks_rounded = int(round(trucks_pred))
     except Exception:
@@ -303,11 +389,11 @@ def root():
 
 @app.post("/predict", response_model=PredictionResponse)
 def predict_trucks_and_cases(req: QueryRequest):
-    # 1. Extract structured info using local extractor
+    # 1. Try Gemini extraction, fallback to local if something goes wrong
     try:
+        extracted = extract_features_with_gemini(req.query)
+    except Exception:
         extracted = extract_features_local(req.query)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
     # 2. Parse date
     try:
@@ -315,10 +401,9 @@ def predict_trucks_and_cases(req: QueryRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid date from query: {e}")
 
-    # 3. Check historical data (within min/max and exact date match)
+    # 3. Check historical data
     hist_values = get_historical_values_if_available(dt)
     if hist_values is not None:
-        # Historical source wins
         return PredictionResponse(
             date=dt.date().isoformat(),
             source="historical",
@@ -327,7 +412,7 @@ def predict_trucks_and_cases(req: QueryRequest):
             raw_extracted=extracted,
         )
 
-    # 4. Otherwise, build feature row using means + extracted info
+    # 4. Model prediction
     try:
         feature_row = build_feature_row(extracted, dt)
         preds = predict_with_models(feature_row)
