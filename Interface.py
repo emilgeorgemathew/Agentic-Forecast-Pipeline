@@ -3,6 +3,7 @@ import requests
 import json
 from datetime import datetime
 import dateparser
+import os
 
 API_URL = os.environ.get("API_URL", "http://localhost:8000/predict")
 
