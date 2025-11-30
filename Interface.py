@@ -5,7 +5,7 @@ from datetime import datetime
 import dateparser
 import os
 
-API_URL = os.environ.get("API_URL", "http://localhost:8000/predict")
+API_URL = os.environ.get("API_URL", "https://agentic-forecast-pipeline-1.onrender.com/predict")
 
 # -----------------------------------------------------------------------------
 # PAGE CONFIG
