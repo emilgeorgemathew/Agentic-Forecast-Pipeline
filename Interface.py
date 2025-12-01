@@ -620,7 +620,7 @@ for message in st.session_state.messages:
 # -----------------------------------------------------------------------------
 # CHAT INPUT
 # -----------------------------------------------------------------------------
-if prompt := st.chat_input("Ask anything"):
+if prompt := st.chat_input("Ask anything", key="chat_input"):
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
 
