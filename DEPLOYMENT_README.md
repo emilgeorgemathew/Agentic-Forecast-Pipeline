@@ -7,40 +7,44 @@ This project consists of two components:
 
 ## 🔧 FastAPI Backend Deployment
 
-### Option 1: Railway (Recommended)
+### Option 1: Render (Recommended)
+
+1. **Sign up for render.com**
+
+2. **Create New Web Service:**
+   - Choose "Web Service" from dashboard
+   - Connect your GitHub repository
+   - Select branch and folder
+
+3. **Configure Service:**
+   - **Runtime:** Python 3
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `uvicorn app:app --host 0.0.0.0 --port $PORT`
+
+4. **Set Environment Variables:**
+   - `GOOGLE_API_KEY` = your Gemini API key
+   - `MODEL_NAME` = `gemini-1.5-flash-latest`
+
+5. **Deploy!** Render will build and deploy automatically
+
+### Option 2: Railway
 
 1. **Sign up for Railway.app**
-
 2. **Deploy the API:**
 ```bash
-# Clone this repository
-git clone https://github.com/emilgeorgemathew/Agentic-Forecast-Pipeline.git
-cd Agentic-Forecast-Pipeline
-
-# Push to new Railway project
 railway init
 railway up
 ```
-
-3. **Set Environment Variables in Railway:**
+3. **Set Environment Variables:**
 ```bash
 railway variables set GOOGLE_API_KEY="your-api-key-here"
 railway variables set MODEL_NAME="gemini-1.5-flash-latest"
 ```
-
-4. **Get your deployed URL:**
+4. **Get your URL:**
 ```bash
 railway domain
-# Example: https://agentic-forecast-api.up.railway.app
+# Example: https://your-api.railway.app
 ```
-
-### Option 2: Render
-
-1. **Create New Web Service** on render.com
-2. **Connect GitHub repository**
-3. **Set build command:** `pip install -r requirements.txt`
-4. **Set start command:** `uvicorn app:app --host 0.0.0.0 --port $PORT`
-5. **Add environment variables:** `GOOGLE_API_KEY`, `MODEL_NAME`
 
 ## 🎨 Streamlit Frontend Deployment
 
