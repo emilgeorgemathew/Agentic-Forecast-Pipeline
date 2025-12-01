@@ -5,7 +5,8 @@ from datetime import datetime
 import dateparser
 import os
 
-API_URL = os.environ.get("API_URL", "http://localhost:8000/predict")
+# Use environment variable for API URL (supports deployment to different backends)
+API_URL = os.environ.get("API_URL", "https://agentic-forecast-api.up.railway.app/predict")
 USER_AVATAR = """data:image/svg+xml;utf8,<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'><g fill='%23111826'><circle cx='32' cy='22' r='12'/><path d='M12 54c0-11 8.5-18 20-18s20 7 20 18v4H12z' /></g></svg>"""
 ASSISTANT_AVATAR = """data:image/svg+xml;utf8,<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'><g fill='%23111826'><rect x='12' y='14' width='40' height='36' rx='8' ry='8'/><rect x='24' y='10' width='16' height='8' rx='2'/><circle cx='24' cy='32' r='4' fill='%23f8fafc'/><circle cx='40' cy='32' r='4' fill='%23f8fafc'/><rect x='24' y='40' width='16' height='4' rx='2' fill='%23f8fafc'/></g></svg>"""
 
@@ -453,22 +454,26 @@ def display_prediction_response(data):
 
     st.markdown("---")
 
-    # Details in two columns (2x4-style grid)
-    left, right = st.columns(2)
-    with left:
-        st.markdown(f"**📅 Forecast Date:** {data['date']}")
-        if data.get("state"):
-            st.markdown(f"**🏠 State:** {data['state']}")
-        source_label = "📈 Model Forecast" if data["source"] in ["model", "model_search"] else "📜 Historical Value"
-        st.markdown(f"**📘 Data Source:** {source_label}")
+    def fmt(val, fallback="N/A"):
+        return val if val not in (None, "", []) else fallback
 
-    with right:
-        if data.get("dept_name"):
-            st.markdown(f"**🏢 Dept Name:** {data['dept_name']}")
-        if data.get("dept_id"):
-            st.markdown(f"**🏢 Dept ID:** {data['dept_id']}")
-        if data.get("store_id"):
-            st.markdown(f"**🏪 Store ID:** {data['store_id']}")
+    # 2x3 grid (2 columns, 3 rows)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"**📅 Forecast Date:** _{fmt(data.get('date'))}_")
+        st.markdown(f"**🏠 State:** _{fmt(data.get('state'))}_")
+        source_label = "📈 Model Forecast" if data.get("source") in ["model", "model_search"] else "📜 Historical Value"
+        st.markdown(f"**📘 Data Source:** _{fmt(source_label)}_")
+
+    with c2:
+        # Always show these fields, even if N/A to maintain consistent display
+        st.markdown(f"**🏪 Store ID:** _{fmt(data.get('store_id'))}_")
+        st.markdown(f"**🏢 Dept ID:** _{fmt(data.get('dept_id'))}_")
+        st.markdown(f"**🏢 Dept Name:** _{fmt(data.get('dept_name'))}_")
+
+    # Additional context if available
+    if data.get("message"):
+        st.info(data.get("message"))
 
     st.caption("Prediction generated using advanced time-series models.")
 

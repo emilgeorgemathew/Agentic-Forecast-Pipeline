@@ -809,9 +809,37 @@ def get_store_dept_metadata(store_id: Optional[int] = None,
     return result
 
 
+def get_default_store_dept_for_state(state_name: Optional[str]) -> Dict[str, Any]:
+    """
+    Pick a representative store/dept for a given state from historical data.
+    Uses the most frequent store_id/dept_id within the state (falls back to first available).
+    """
+    defaults: Dict[str, Any] = {}
+
+    if not state_name or "state_name" not in df_hist.columns:
+        return defaults
+
+    mask = df_hist["state_name"].str.upper() == state_name.upper()
+    if not mask.any():
+        return defaults
+
+    sub = df_hist.loc[mask]
+
+    if "store_id" in sub.columns and sub["store_id"].notna().any():
+        defaults["store_id"] = int(sub["store_id"].mode().iloc[0])
+
+    if "dept_id" in sub.columns and sub["dept_id"].notna().any():
+        defaults["dept_id"] = int(sub["dept_id"].mode().iloc[0])
+
+    if "dept_desc" in sub.columns and sub["dept_desc"].notna().any():
+        defaults["dept_desc"] = str(sub["dept_desc"].mode().iloc[0])
+
+    return defaults
+
+
 def get_historical_values_if_available(dt: date, state_name: Optional[str] = None,
-                                        store_id: Optional[int] = None,
-                                        dept_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+                                       store_id: Optional[int] = None,
+                                       dept_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     """
     Get historical values for a given date, with optional filtering by state, store, dept.
     Returns dict with trucks, cases, and any available metadata (dept_id, state_name, store_id, dept_desc).
@@ -1037,8 +1065,12 @@ def predict_trucks_and_cases(req: QueryRequest):
 
     # 2) Gemini extraction with conversation context
     print(f"=== DEBUG: Calling Gemini for current query with previous_extraction: {previous_extraction}")
-    extracted = call_gemini_extract(user_query, conversation_history, previous_extraction)
-    print(f"=== DEBUG: Gemini extracted: {extracted}")
+    try:
+        extracted = call_gemini_extract(user_query, conversation_history, previous_extraction)
+        print(f"=== DEBUG: Gemini extracted: {extracted}")
+    except Exception as e:
+        print(f"=== WARN: Gemini extract failed, falling back to local parsing: {e}")
+        extracted = {}
 
     # 2.5) Check if current query actually contains date-related text
     query_lower = user_query.lower()
@@ -1101,6 +1133,16 @@ def predict_trucks_and_cases(req: QueryRequest):
             state_name = STATE_MAP.get(state_name.lower())
     if not state_name:
         state_name = extract_state_fallback(user_query)
+
+    # Apply defaults for store/dept when missing but state is known
+    if state_name:
+        defaults = get_default_store_dept_for_state(state_name)
+        if not extracted.get("store_id") and defaults.get("store_id"):
+            extracted["store_id"] = defaults["store_id"]
+        if not extracted.get("dept_id") and defaults.get("dept_id"):
+            extracted["dept_id"] = defaults["dept_id"]
+        if not extracted.get("dept_desc") and defaults.get("dept_desc"):
+            extracted["dept_desc"] = defaults["dept_desc"]
 
     # Check for search queries like "are there 4 trucks" without specific date
     if extracted.get("dt") is None and (("4" in user_query and "trucks" in user_query.lower()) or ("any" in user_query.lower() and "trucks" in user_query.lower()) or ("are there" in user_query.lower() and "trucks" in user_query.lower())):
