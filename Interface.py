@@ -48,6 +48,8 @@ if dark_mode:
     info_border = "rgba(0, 122, 255, 0.4)"
     error_bg = "rgba(255, 100, 100, 0.15)"
     error_border = "rgba(255, 100, 100, 0.3)"
+    bottom_bar_bg = "rgba(255, 255, 255, 0.05)"
+    input_container_bg = "rgba(255, 255, 255, 0.05)"
 else:
     bg_gradient = "linear-gradient(135deg, #f5f5f7, #e8e8ed, #d1d1d6, #f5f5f7)"
     text_primary = "#000000"
@@ -71,6 +73,8 @@ else:
     info_border = "rgba(0, 122, 255, 0.5)"
     error_bg = "rgba(255, 59, 48, 0.15)"
     error_border = "rgba(255, 59, 48, 0.35)"
+    bottom_bar_bg = "#ffffff"
+    input_container_bg = "#ffffff"
 
 # Custom CSS for iOS-inspired glass design
 st.markdown(f"""
@@ -183,7 +187,7 @@ st.markdown(f"""
 
     /* Bottom bar container */
     [data-testid="stBottom"] {{
-        background: {glass_bg} !important;
+        background: {bottom_bar_bg} !important;
         backdrop-filter: blur(30px) saturate(180%);
         -webkit-backdrop-filter: blur(30px) saturate(180%);
         border-top: 1px solid {glass_border};
@@ -191,7 +195,7 @@ st.markdown(f"""
 
     /* iOS-style glass chat input */
     .stChatInputContainer {{
-        background: {glass_bg} !important;
+        background: {input_container_bg} !important;
         backdrop-filter: blur(30px) saturate(180%);
         -webkit-backdrop-filter: blur(30px) saturate(180%);
         border: 1px solid {glass_border} !important;
@@ -212,16 +216,23 @@ st.markdown(f"""
         opacity: 0.7;
     }}
 
-    /* Additional override for text input visibility in light mode */
+    /* Additional override for text input visibility - CRITICAL */
     .stChatInput input[type="text"],
-    .stChatInput textarea {{
+    .stChatInput textarea,
+    [data-testid="stChatInput"] textarea,
+    [data-testid="stChatInput"] input,
+    .stChatInputContainer textarea,
+    .stChatInputContainer input {{
         color: {text_primary} !important;
         background: transparent !important;
+        -webkit-text-fill-color: {text_primary} !important;
     }}
 
     .stChatInput input::placeholder,
-    .stChatInput textarea::placeholder {{
+    .stChatInput textarea::placeholder,
+    [data-testid="stChatInput"] textarea::placeholder {{
         color: {text_secondary} !important;
+        opacity: 0.7 !important;
     }}
 
     /* Divider with gradient */
