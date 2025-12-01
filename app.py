@@ -1259,6 +1259,8 @@ def predict_with_models(feature_row: pd.DataFrame) -> Dict[str, float]:
     Make predictions using trucks and cases models.
     For LightGBM, uses internal booster to avoid categorical feature mismatches.
     """
+    import numpy as np
+
     # Trucks prediction (LightGBM) - use booster directly
     feature_array = feature_row.values
     if hasattr(trucks_model, '_Booster') and trucks_model._Booster:
@@ -1267,8 +1269,8 @@ def predict_with_models(feature_row: pd.DataFrame) -> Dict[str, float]:
     else:
         trucks_pred = float(trucks_model.predict(feature_array)[0])
 
-    # Cases prediction (CatBoost)
-    cases_pred = float(cases_model.predict(feature_row)[0])
+    # Cases prediction (CatBoost) - round to nearest integer
+    cases_pred = float(np.round(cases_model.predict(feature_row)[0]))
 
     # Clamp trucks to 1-4 range
     trucks_int = max(1, min(4, int(round(trucks_pred))))
