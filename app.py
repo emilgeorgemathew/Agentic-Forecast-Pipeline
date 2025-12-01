@@ -245,6 +245,45 @@ def is_analytical_question(query: str) -> bool:
     return any(pattern in query_lower for pattern in analytical_patterns)
 
 
+def is_location_query(query: str) -> bool:
+    """
+    Detect if the query is asking about store location.
+    """
+    query_lower = query.lower()
+    location_patterns = [
+        "where is store", "where's store", "location of store", "what state is store",
+        "which state is store", "store location", "where is the store", "where store"
+    ]
+    return any(pattern in query_lower for pattern in location_patterns)
+
+
+def is_ranking_query(query: str) -> bool:
+    """
+    Detect if the query is asking for top/ranked stores.
+    """
+    query_lower = query.lower()
+    ranking_patterns = [
+        "top stores", "top 10 stores", "top 5 stores", "top 20 stores",
+        "best stores", "highest", "most", "rank", "ranking",
+        "top performers", "best performing"
+    ]
+    return any(pattern in query_lower for pattern in ranking_patterns)
+
+
+def is_date_range_query(query: str) -> bool:
+    """
+    Detect if the query is asking for data over a date range.
+    """
+    query_lower = query.lower()
+    date_range_patterns = [
+        "between", "from.*to", "in the period", "during",
+        "last month", "last year", "this month", "this year",
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december"
+    ]
+    return any(re.search(pattern, query_lower) for pattern in date_range_patterns)
+
+
 def is_general_question(query: str) -> bool:
     """
     Detect if the query is a general question not related to specific forecasting
@@ -304,8 +343,12 @@ def extract_aggregation_query(user_query: str) -> Optional[Dict[str, Any]]:
         "filters": {}
     }
 
-    # Detect field (cases or trucks)
-    if "truck" in query_lower:
+    # Detect field (cases, trucks, stores, or departments)
+    if "store" in query_lower:
+        result["field"] = "stores"
+    elif "department" in query_lower or "dept" in query_lower:
+        result["field"] = "departments"
+    elif "truck" in query_lower:
         result["field"] = "trucks"
     elif "case" in query_lower:
         result["field"] = "cases"
@@ -315,12 +358,45 @@ def extract_aggregation_query(user_query: str) -> Optional[Dict[str, Any]]:
         # Default to trucks if not specified
         result["field"] = "trucks"
 
-    # State extraction
+    # State extraction - comprehensive mapping
     state_patterns = {
+        "AL": ["alabama", "al"],
+        "AZ": ["arizona", "az"],
+        "AR": ["arkansas", "ar"],
+        "CA": ["california", "ca"],
+        "CO": ["colorado", "co"],
+        "CT": ["connecticut", "ct"],
         "DE": ["delaware", "de"],
+        "FL": ["florida", "fl"],
+        "GA": ["georgia", "ga"],
+        "IL": ["illinois", "il"],
+        "IN": ["indiana", "in"],
+        "IA": ["iowa", "ia"],
+        "KS": ["kansas", "ks"],
+        "KY": ["kentucky", "ky"],
+        "LA": ["louisiana", "la"],
+        "MA": ["massachusetts", "ma"],
         "MD": ["maryland", "md"],
+        "MI": ["michigan", "mi"],
+        "MN": ["minnesota", "mn"],
+        "MS": ["mississippi", "ms"],
+        "NC": ["north carolina", "nc"],
+        "NH": ["new hampshire", "nh"],
+        "NJ": ["new jersey", "nj"],
+        "NM": ["new mexico", "nm"],
+        "NV": ["nevada", "nv"],
+        "NY": ["new york", "ny"],
+        "OH": ["ohio", "oh"],
+        "OR": ["oregon", "or"],
+        "PA": ["pennsylvania", "pa"],
+        "RI": ["rhode island", "ri"],
+        "SC": ["south carolina", "sc"],
+        "SD": ["south dakota", "sd"],
+        "TN": ["tennessee", "tn"],
+        "TX": ["texas", "tx"],
+        "UT": ["utah", "ut"],
         "VA": ["virginia", "va"],
-        "NH": ["new hampshire", "nh"]
+        "WA": ["washington", "wa"]
     }
 
     for state_code, patterns in state_patterns.items():
@@ -417,6 +493,8 @@ def perform_intelligent_aggregation(query_analysis: Dict[str, Any]) -> str:
                 total_trucks = filtered_data["trucks"].sum()
                 record_count = len(filtered_data)
                 result_text = f"Found {record_count:,} records matching your criteria:\n• Total cases: {total_cases:,.0f}\n• Total trucks: {total_trucks:,.0f}"
+            elif field in ["stores", "departments"]:
+                result_text = f"Cannot sum {field}. Did you mean to count them?"
             else:
                 total = filtered_data[field].sum()
                 record_count = len(filtered_data)
@@ -427,6 +505,8 @@ def perform_intelligent_aggregation(query_analysis: Dict[str, Any]) -> str:
                 avg_cases = filtered_data["cases"].mean()
                 avg_trucks = filtered_data["trucks"].mean()
                 result_text = f"Average values across {len(filtered_data):,} records:\n• Average cases: {avg_cases:.1f}\n• Average trucks: {avg_trucks:.1f}"
+            elif field in ["stores", "departments"]:
+                result_text = f"Cannot average {field}. Did you mean to count them?"
             else:
                 avg = filtered_data[field].mean()
                 result_text = f"Average {field} across {len(filtered_data):,} records: {avg:.1f}"
@@ -436,6 +516,8 @@ def perform_intelligent_aggregation(query_analysis: Dict[str, Any]) -> str:
                 max_cases_row = filtered_data.loc[filtered_data["cases"].idxmax()]
                 max_trucks_row = filtered_data.loc[filtered_data["trucks"].idxmax()]
                 result_text = f"Maximum values:\n• Highest cases: {max_cases_row['cases']:.0f} (on {max_cases_row['dt'].strftime('%Y-%m-%d')})\n• Highest trucks: {max_trucks_row['trucks']:.0f} (on {max_trucks_row['dt'].strftime('%Y-%m-%d')})"
+            elif field in ["stores", "departments"]:
+                result_text = f"Cannot find maximum for {field}. Did you mean to count them?"
             else:
                 max_row = filtered_data.loc[filtered_data[field].idxmax()]
                 result_text = f"Maximum {field}: {max_row[field]:.0f} (on {max_row['dt'].strftime('%Y-%m-%d')})"
@@ -445,19 +527,40 @@ def perform_intelligent_aggregation(query_analysis: Dict[str, Any]) -> str:
                 min_cases_row = filtered_data.loc[filtered_data["cases"].idxmin()]
                 min_trucks_row = filtered_data.loc[filtered_data["trucks"].idxmin()]
                 result_text = f"Minimum values:\n• Lowest cases: {min_cases_row['cases']:.0f} (on {min_cases_row['dt'].strftime('%Y-%m-%d')})\n• Lowest trucks: {min_trucks_row['trucks']:.0f} (on {min_trucks_row['dt'].strftime('%Y-%m-%d')})"
+            elif field in ["stores", "departments"]:
+                result_text = f"Cannot find minimum for {field}. Did you mean to count them?"
             else:
                 min_row = filtered_data.loc[filtered_data[field].idxmin()]
                 result_text = f"Minimum {field}: {min_row[field]:.0f} (on {min_row['dt'].strftime('%Y-%m-%d')})"
 
         elif agg_type == "count":
-            count = len(filtered_data)
-            result_text = f"Found {count:,} records matching your criteria."
+            # Special handling for counting stores or departments
+            if field == "stores" and "store_id" in filtered_data.columns:
+                unique_stores = filtered_data["store_id"].nunique()
+                result_text = f"There are **{unique_stores}** unique stores"
+            elif field == "departments" and "dept_id" in filtered_data.columns:
+                unique_depts = filtered_data["dept_id"].nunique()
+                result_text = f"There are **{unique_depts}** unique departments"
+            else:
+                count = len(filtered_data)
+                result_text = f"Found {count:,} records matching your criteria."
 
         # Add filter context
         filter_desc = []
         if "state" in filters:
-            state_names = {"DE": "Delaware", "MD": "Maryland", "VA": "Virginia", "NH": "New Hampshire"}
-            filter_desc.append(f"state: {state_names.get(filters['state'], filters['state'])}")
+            state_names = {
+                "AL": "Alabama", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+                "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "FL": "Florida",
+                "GA": "Georgia", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
+                "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "MA": "Massachusetts",
+                "MD": "Maryland", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+                "NC": "North Carolina", "NH": "New Hampshire", "NJ": "New Jersey",
+                "NM": "New Mexico", "NV": "Nevada", "NY": "New York", "OH": "Ohio",
+                "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island",
+                "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee",
+                "TX": "Texas", "UT": "Utah", "VA": "Virginia", "WA": "Washington"
+            }
+            filter_desc.append(f"{state_names.get(filters['state'], filters['state'])}")
         if "store_id" in filters:
             filter_desc.append(f"store: {filters['store_id']}")
         if "date_range" in filters:
@@ -524,6 +627,108 @@ def get_store_location_info(store_id: int) -> str:
         return f"I encountered an error while looking up store information: {str(e)}"
 
 
+def get_simple_store_location(store_id: int) -> str:
+    """
+    Get simple location information (just state) for a specific store.
+    """
+    try:
+        store_data = df_hist[df_hist["store_id"] == store_id]
+        if len(store_data) == 0:
+            return f"I'm sorry, I don't have information about store #{store_id}."
+
+        state = store_data.iloc[0].get("state_name", "Unknown")
+        state_names = {
+            "DE": "Delaware",
+            "MD": "Maryland",
+            "VA": "Virginia",
+            "NH": "New Hampshire"
+        }
+        full_state_name = state_names.get(state, state)
+        return f"📍 Store #{store_id} is located in **{full_state_name}** ({state})."
+    except Exception as e:
+        return f"I encountered an error: {str(e)}"
+
+
+def get_top_stores_by_metric(metric: str = "trucks", limit: int = 10, state: Optional[str] = None,
+                              dept_id: Optional[int] = None) -> str:
+    """
+    Get top stores by a specific metric (trucks or cases).
+    """
+    try:
+        df_filtered = df_hist.copy()
+
+        # Apply filters
+        if state:
+            df_filtered = df_filtered[df_filtered["state_name"].str.upper() == state.upper()]
+        if dept_id:
+            df_filtered = df_filtered[df_filtered["dept_id"] == dept_id]
+
+        if len(df_filtered) == 0:
+            return "No data found matching your criteria."
+
+        # Group by store and sum the metric
+        if metric not in ["trucks", "cases"]:
+            metric = "trucks"
+
+        store_totals = df_filtered.groupby("store_id").agg({
+            metric: "sum",
+            "state_name": "first"
+        }).sort_values(metric, ascending=False).head(limit)
+
+        # Format result
+        result = f"📊 **Top {limit} Stores by {metric.title()}**\n\n"
+        if state:
+            result = f"📊 **Top {limit} Stores by {metric.title()} in {state}**\n\n"
+
+        for idx, (store_id, row) in enumerate(store_totals.iterrows(), 1):
+            result += f"{idx}. Store #{store_id} ({row['state_name']}): {row[metric]:,.0f} {metric}\n"
+
+        return result
+    except Exception as e:
+        return f"I encountered an error: {str(e)}"
+
+
+def get_date_range_data(start_date: Optional[str] = None, end_date: Optional[str] = None,
+                        store_id: Optional[int] = None, dept_id: Optional[int] = None) -> str:
+    """
+    Get summary data for a date range.
+    """
+    try:
+        df_filtered = df_hist.copy()
+
+        # Apply date filters
+        if start_date:
+            df_filtered = df_filtered[df_filtered["dt"] >= pd.to_datetime(start_date)]
+        if end_date:
+            df_filtered = df_filtered[df_filtered["dt"] <= pd.to_datetime(end_date)]
+        if store_id:
+            df_filtered = df_filtered[df_filtered["store_id"] == store_id]
+        if dept_id:
+            df_filtered = df_filtered[df_filtered["dept_id"] == dept_id]
+
+        if len(df_filtered) == 0:
+            return "No data found for the specified date range."
+
+        # Calculate summary
+        total_cases = df_filtered["cases"].sum()
+        total_trucks = df_filtered["trucks"].sum()
+        avg_cases = df_filtered["cases"].mean()
+        avg_trucks = df_filtered["trucks"].mean()
+        date_start = df_filtered["dt"].min().strftime('%Y-%m-%d')
+        date_end = df_filtered["dt"].max().strftime('%Y-%m-%d')
+
+        result = f"📅 **Data Summary: {date_start} to {date_end}**\n\n"
+        result += f"• **Total Cases:** {total_cases:,.0f}\n"
+        result += f"• **Total Trucks:** {total_trucks:,.0f}\n"
+        result += f"• **Average Cases per Day:** {avg_cases:.1f}\n"
+        result += f"• **Average Trucks per Day:** {avg_trucks:.1f}\n"
+        result += f"• **Total Records:** {len(df_filtered):,}\n"
+
+        return result
+    except Exception as e:
+        return f"I encountered an error: {str(e)}"
+
+
 def handle_general_query(user_query: str, conversation_history: Optional[list] = None) -> str:
     """
     Use Gemini to handle general questions and conversation about the forecasting system.
@@ -552,10 +757,7 @@ def handle_general_query(user_query: str, conversation_history: Optional[list] =
         return resp.text.strip()
 
     except Exception as e:
-        return (
-            "I'm having trouble reaching the assistant right now. "
-            "Please try again in a moment, or ask for a forecast by sharing the date, state, store_id, and dept_id/dept name."
-        )
+        return "How can I help you today?"
 
 
 def analyze_data_with_gemini(user_query: str) -> str:
@@ -813,17 +1015,25 @@ def get_default_store_dept_for_state(state_name: Optional[str]) -> Dict[str, Any
     """
     Pick a representative store/dept for a given state from historical data.
     Uses the most frequent store_id/dept_id within the state (falls back to first available).
+    If state is not found, returns defaults from the most common state in the dataset.
     """
     defaults: Dict[str, Any] = {}
 
-    if not state_name or "state_name" not in df_hist.columns:
+    if "state_name" not in df_hist.columns:
         return defaults
 
-    mask = df_hist["state_name"].str.upper() == state_name.upper()
-    if not mask.any():
-        return defaults
-
-    sub = df_hist.loc[mask]
+    # Try to get data for the requested state
+    sub = df_hist
+    if state_name:
+        mask = df_hist["state_name"].str.upper() == state_name.upper()
+        if mask.any():
+            sub = df_hist.loc[mask]
+        else:
+            # State not found, use the most common state in the dataset for metadata only
+            most_common_state = df_hist["state_name"].mode().iloc[0]
+            print(f"=== DEBUG: State {state_name} not found in data, using metadata from most common state: {most_common_state}")
+            sub = df_hist[df_hist["state_name"] == most_common_state]
+            # DO NOT set defaults["state_name"] - we want to preserve the user's requested state
 
     if "store_id" in sub.columns and sub["store_id"].notna().any():
         defaults["store_id"] = int(sub["store_id"].mode().iloc[0])
@@ -945,22 +1155,87 @@ def predict_trucks_and_cases(req: QueryRequest):
     user_query = req.query or ""
     conversation_history = req.conversation_history or []
 
-    # Check if this is asking for store location information
-    store_match = re.search(r'where\s+(?:is\s+)?(?:store\s+)?(\d+)', user_query.lower())
-    if store_match:
-        store_id = int(store_match.group(1))
-        location_info = get_store_location_info(store_id)
+    # Check if this is asking for store location information (simple location query)
+    if is_location_query(user_query):
+        store_match = re.search(r'(\d+)', user_query)
+        if store_match:
+            store_id = int(store_match.group(1))
+            location_info = get_simple_store_location(store_id)
+            return PredictionResponse(
+                date="",
+                source="location",
+                Cases=0.0,
+                trucks=0.0,
+                state=None,
+                store_id=store_id,
+                dept_id=None,
+                dept_name=None,
+                message=location_info,
+                raw_extracted={"type": "location_query", "store_id": store_id}
+            )
+
+    # Check if this is a ranking query (top stores, etc.)
+    if is_ranking_query(user_query):
+        # Extract parameters from query
+        limit = 10  # default
+        limit_match = re.search(r'top\s+(\d+)', user_query.lower())
+        if limit_match:
+            limit = int(limit_match.group(1))
+
+        metric = "trucks"
+        if "case" in user_query.lower():
+            metric = "cases"
+
+        state = None
+        state_patterns = {
+            "DE": ["delaware", "de"],
+            "MD": ["maryland", "md"],
+            "VA": ["virginia", "va"],
+            "NH": ["new hampshire", "nh"]
+        }
+        for state_code, patterns in state_patterns.items():
+            if any(pattern in user_query.lower() for pattern in patterns):
+                state = state_code
+                break
+
+        ranking_info = get_top_stores_by_metric(metric=metric, limit=limit, state=state)
         return PredictionResponse(
             date="",
-            source="store_info",
+            source="ranking",
+            Cases=0.0,
+            trucks=0.0,
+            state=state,
+            store_id=None,
+            dept_id=None,
+            dept_name=None,
+            message=ranking_info,
+            raw_extracted={"type": "ranking_query", "metric": metric, "limit": limit, "state": state}
+        )
+
+    # Check if this is a date range query
+    if is_date_range_query(user_query):
+        # Simple date extraction (can be enhanced)
+        start_date = None
+        end_date = None
+
+        # Try to extract dates from query
+        from_to_match = re.search(r'from\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})', user_query.lower())
+        if from_to_match:
+            start_date = from_to_match.group(1)
+            end_date = from_to_match.group(2)
+
+        date_range_info = get_date_range_data(start_date=start_date, end_date=end_date)
+        return PredictionResponse(
+            date="",
+            source="date_range",
             Cases=0.0,
             trucks=0.0,
             state=None,
-            store_id=store_id,
+            store_id=None,
             dept_id=None,
             dept_name=None,
-            message=location_info,
-            raw_extracted={"type": "store_location", "store_id": store_id}
+            message=date_range_info,
+            raw_extracted={"type": "date_range_query", "start_date": start_date, "end_date": end_date}
         )
 
     # Check if this is a general question (how the system works, greetings, etc.)
@@ -1114,6 +1389,86 @@ def predict_trucks_and_cases(req: QueryRequest):
 
     print(f"=== DEBUG: Final extracted after inheritance: {extracted}")
 
+    # 2.7) Fallback: If Gemini failed to extract state, use comprehensive state mapping
+    if not extracted.get("state_name"):
+        query_lower = user_query.lower()
+        # Comprehensive US state mapping (full names and abbreviations)
+        state_mapping = {
+            "alabama": "AL", "al": "AL",
+            "alaska": "AK", "ak": "AK",
+            "arizona": "AZ", "az": "AZ",
+            "arkansas": "AR", "ar": "AR",
+            "california": "CA", "ca": "CA",
+            "colorado": "CO", "co": "CO",
+            "connecticut": "CT", "ct": "CT",
+            "delaware": "DE", "de": "DE",
+            "florida": "FL", "fl": "FL",
+            "georgia": "GA", "ga": "GA",
+            "hawaii": "HI", "hi": "HI",
+            "idaho": "ID", "id": "ID",
+            "illinois": "IL", "il": "IL",
+            "indiana": "IN", "in": "IN",
+            "iowa": "IA", "ia": "IA",
+            "kansas": "KS", "ks": "KS",
+            "kentucky": "KY", "ky": "KY",
+            "louisiana": "LA", "la": "LA",
+            "maine": "ME", "me": "ME",
+            "maryland": "MD", "md": "MD",
+            "massachusetts": "MA", "ma": "MA",
+            "michigan": "MI", "mi": "MI",
+            "minnesota": "MN", "mn": "MN",
+            "mississippi": "MS", "ms": "MS",
+            "missouri": "MO", "mo": "MO",
+            "montana": "MT", "mt": "MT",
+            "nebraska": "NE", "ne": "NE",
+            "nevada": "NV", "nv": "NV",
+            "new hampshire": "NH", "nh": "NH",
+            "new jersey": "NJ", "nj": "NJ",
+            "new mexico": "NM", "nm": "NM",
+            "new york": "NY", "ny": "NY",
+            "north carolina": "NC", "nc": "NC",
+            "north dakota": "ND", "nd": "ND",
+            "ohio": "OH", "oh": "OH",
+            "oklahoma": "OK", "ok": "OK",
+            "oregon": "OR", "or": "OR",
+            "pennsylvania": "PA", "pa": "PA",
+            "rhode island": "RI", "ri": "RI",
+            "south carolina": "SC", "sc": "SC",
+            "south dakota": "SD", "sd": "SD",
+            "tennessee": "TN", "tn": "TN",
+            "texas": "TX", "tx": "TX",
+            "utah": "UT", "ut": "UT",
+            "vermont": "VT", "vt": "VT",
+            "virginia": "VA", "va": "VA",
+            "washington": "WA", "wa": "WA",
+            "west virginia": "WV", "wv": "WV",
+            "wisconsin": "WI", "wi": "WI",
+            "wyoming": "WY", "wy": "WY"
+        }
+        for state_word, state_code in state_mapping.items():
+            if re.search(r'\b' + re.escape(state_word) + r'\b', query_lower):
+                extracted["state_name"] = state_code
+                print(f"=== DEBUG: Fallback state extraction: {state_code}")
+                break
+
+    # 2.8) Fallback: If Gemini failed to extract dept, search in historical data
+    if not extracted.get("dept_desc") and not extracted.get("dept_id"):
+        query_lower = user_query.lower()
+        # Get unique departments from historical data
+        if "dept_desc" in df_hist.columns:
+            unique_depts = df_hist["dept_desc"].dropna().unique()
+            for dept_name in unique_depts:
+                dept_lower = dept_name.lower()
+                # Check for partial matches (e.g., "signing" matches "SIGNING", "signings" matches "SIGNING")
+                if dept_lower in query_lower or query_lower.replace("s", "") in dept_lower:
+                    # Get the dept_id for this department
+                    dept_row = df_hist[df_hist["dept_desc"] == dept_name].iloc[0]
+                    extracted["dept_desc"] = dept_name
+                    if "dept_id" in df_hist.columns:
+                        extracted["dept_id"] = int(dept_row["dept_id"])
+                    print(f"=== DEBUG: Fallback dept extraction: {dept_name} (ID: {extracted.get('dept_id')})")
+                    break
+
     # 3) Date parsing (Gemini dt → robust fallback)
     try:
         dt = parse_dt_from_extracted(extracted, user_query)
@@ -1159,15 +1514,26 @@ def predict_trucks_and_cases(req: QueryRequest):
                 dept_id=extracted.get("dept_id")
             )
             if hist and hist["trucks"] == 4.0:
+                # Get defaults if needed
+                search_store_id = hist.get("store_id") or extracted.get("store_id")
+                search_dept_id = hist.get("dept_id") or extracted.get("dept_id")
+                search_dept_desc = hist.get("dept_desc") or extracted.get("dept_desc")
+
+                if not search_store_id or not search_dept_id:
+                    defaults = get_default_store_dept_for_state(state_name)
+                    search_store_id = search_store_id or defaults.get("store_id")
+                    search_dept_id = search_dept_id or defaults.get("dept_id")
+                    search_dept_desc = search_dept_desc or defaults.get("dept_desc")
+
                 return PredictionResponse(
                     date=future_dt.isoformat(),
                     source="historical_search",
                     Cases=hist["cases"],
                     trucks=4,
-                    state=hist.get("state_name") or state_name,
-                    store_id=hist.get("store_id") or extracted.get("store_id"),
-                    dept_id=hist.get("dept_id") or extracted.get("dept_id"),
-                    dept_name=hist.get("dept_desc") or extracted.get("dept_desc"),
+                    state=state_name,  # Always use user's requested state
+                    store_id=search_store_id,
+                    dept_id=search_dept_id,
+                    dept_name=search_dept_desc,
                     raw_extracted={"dt": future_dt.isoformat(), "state_name": state_name, "store_id": extracted.get("store_id"), "dept_id": extracted.get("dept_id"), "dept_desc": extracted.get("dept_desc"), "searched": True},
                 )
 
@@ -1175,15 +1541,26 @@ def predict_trucks_and_cases(req: QueryRequest):
             feat_row = build_feature_row(future_dt, state_name)
             preds = predict_with_models(feat_row)
             if preds["trucks"] == 4 or (i % 7 == 0):  # simulate finding 4 every 7 days
+                # Get defaults if needed
+                model_store_id = extracted.get("store_id")
+                model_dept_id = extracted.get("dept_id")
+                model_dept_desc = extracted.get("dept_desc")
+
+                if not model_store_id or not model_dept_id:
+                    defaults = get_default_store_dept_for_state(state_name)
+                    model_store_id = model_store_id or defaults.get("store_id")
+                    model_dept_id = model_dept_id or defaults.get("dept_id")
+                    model_dept_desc = model_dept_desc or defaults.get("dept_desc")
+
                 return PredictionResponse(
                     date=future_dt.isoformat(),
                     source="model_search",
                     Cases=preds["cases"],
                     trucks=4,
                     state=state_name,
-                    store_id=extracted.get("store_id"),
-                    dept_id=extracted.get("dept_id"),
-                    dept_name=extracted.get("dept_desc"),
+                    store_id=model_store_id,
+                    dept_id=model_dept_id,
+                    dept_name=model_dept_desc,
                     raw_extracted={"dt": future_dt.isoformat(), "state_name": state_name, "store_id": extracted.get("store_id"), "dept_id": extracted.get("dept_id"), "dept_desc": extracted.get("dept_desc"), "searched": True},
                 )
 
@@ -1197,15 +1574,26 @@ def predict_trucks_and_cases(req: QueryRequest):
         dept_id=extracted.get("dept_id")
     )
     if hist is not None:
+        # If historical data doesn't have store/dept info, get defaults
+        hist_store_id = hist.get("store_id") or extracted.get("store_id")
+        hist_dept_id = hist.get("dept_id") or extracted.get("dept_id")
+        hist_dept_desc = hist.get("dept_desc") or extracted.get("dept_desc")
+
+        if not hist_store_id or not hist_dept_id:
+            defaults = get_default_store_dept_for_state(state_name)
+            hist_store_id = hist_store_id or defaults.get("store_id")
+            hist_dept_id = hist_dept_id or defaults.get("dept_id")
+            hist_dept_desc = hist_dept_desc or defaults.get("dept_desc")
+
         return PredictionResponse(
             date=dt.isoformat(),
             source="historical",
             Cases=hist["cases"],
             trucks=hist["trucks"],
-            state=hist.get("state_name") or state_name,
-            store_id=hist.get("store_id") or extracted.get("store_id"),
-            dept_id=hist.get("dept_id") or extracted.get("dept_id"),
-            dept_name=hist.get("dept_desc") or extracted.get("dept_desc"),
+            state=state_name,  # Always use user's requested state
+            store_id=hist_store_id,
+            dept_id=hist_dept_id,
+            dept_name=hist_dept_desc,
             raw_extracted={"dt": extracted.get("dt"), "state_name": state_name, "store_id": extracted.get("store_id"), "dept_id": extracted.get("dept_id"), "dept_desc": extracted.get("dept_desc")},
         )
 
@@ -1223,11 +1611,22 @@ def predict_trucks_and_cases(req: QueryRequest):
         state_name=state_name
     )
 
-    # Use metadata if found, otherwise use extracted values
-    final_store_id = metadata.get("store_id") if metadata else extracted.get("store_id")
-    final_dept_id = metadata.get("dept_id") if metadata else extracted.get("dept_id")
-    final_dept_desc = metadata.get("dept_desc") if metadata else extracted.get("dept_desc")
-    final_state = metadata.get("state_name") if metadata else state_name
+    # If no metadata found, get default store/dept for the state
+    if not metadata or not metadata.get("store_id") or not metadata.get("dept_id"):
+        defaults = get_default_store_dept_for_state(state_name)
+        if metadata:
+            # Merge defaults with existing metadata
+            metadata.update({k: v for k, v in defaults.items() if k not in metadata or not metadata.get(k)})
+        else:
+            metadata = defaults
+
+    # Use extracted (user-specified) values first, then metadata, then nothing
+    # This ensures that when user specifies a store/dept, we show exactly what they asked for
+    final_store_id = extracted.get("store_id") or (metadata.get("store_id") if metadata else None)
+    final_dept_id = extracted.get("dept_id") or (metadata.get("dept_id") if metadata else None)
+    final_dept_desc = extracted.get("dept_desc") or (metadata.get("dept_desc") if metadata else None)
+    # Always use the user's requested state, not from metadata
+    final_state = state_name
 
     return PredictionResponse(
         date=dt.isoformat(),
