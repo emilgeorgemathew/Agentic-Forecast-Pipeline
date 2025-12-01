@@ -28,4 +28,4 @@ services:
     startCommand: streamlit run Interface.py --server.port=$PORT --server.address=0.0.0.0
     envVars:
       - key: API_URL
-        value: https://agentic-forecast-api.onrender.com/predict
+        value: https://agentic-forecast-pipeline-1.onrender.com/predict
