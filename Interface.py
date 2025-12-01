@@ -5,7 +5,7 @@ from datetime import datetime
 import dateparser
 import os
 
-API_URL = os.environ.get("API_URL", "https://agentic-forecast-pipeline-1.onrender.com/predict")
+API_URL = os.environ.get("API_URL", "http://localhost:8000/predict")
 
 # -----------------------------------------------------------------------------
 # PAGE CONFIG
@@ -210,6 +210,18 @@ st.markdown(f"""
     .stChatInput textarea::placeholder {{
         color: {text_secondary} !important;
         opacity: 0.7;
+    }}
+
+    /* Additional override for text input visibility in light mode */
+    .stChatInput input[type="text"],
+    .stChatInput textarea {{
+        color: {text_primary} !important;
+        background: transparent !important;
+    }}
+
+    .stChatInput input::placeholder,
+    .stChatInput textarea::placeholder {{
+        color: {text_secondary} !important;
     }}
 
     /* Divider with gradient */
