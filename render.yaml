@@ -1,4 +1,5 @@
 services:
+  # FastAPI Backend Service
   - type: web
     name: agentic-forecast-api
     env: python
@@ -18,3 +19,13 @@ services:
         value: best_trucks_lgbm.pkl
       - key: CASES_MODEL_PATH
         value: best_cases_catboost_ts_cv.cbm
+
+  # Streamlit Frontend Service
+  - type: web
+    name: agentic-forecast-frontend
+    env: python
+    buildCommand: pip install -r requirements.txt && pip install streamlit
+    startCommand: streamlit run Interface.py --server.port=$PORT --server.address=0.0.0.0
+    envVars:
+      - key: API_URL
+        value: https://agentic-forecast-api.onrender.com/predict
