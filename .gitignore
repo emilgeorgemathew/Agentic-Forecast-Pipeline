@@ -1,0 +1,38 @@
+# Environment files
+.env
+.env.local
+.env.production
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints
+
+# Temporary files
+*.tmp
+*.temp
+
+# ML model files (uncomment if you want to ignore large model files)
+# *.pkl
+# *.pb
+# *.h5
+
+# Claude workspace files (local)
+.claude/*
