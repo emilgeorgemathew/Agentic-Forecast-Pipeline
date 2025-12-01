@@ -6,6 +6,8 @@ import dateparser
 import os
 
 API_URL = os.environ.get("API_URL", "http://localhost:8000/predict")
+USER_AVATAR = """data:image/svg+xml;utf8,<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'><g fill='%23111826'><circle cx='32' cy='22' r='12'/><path d='M12 54c0-11 8.5-18 20-18s20 7 20 18v4H12z' /></g></svg>"""
+ASSISTANT_AVATAR = """data:image/svg+xml;utf8,<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'><g fill='%23111826'><rect x='12' y='14' width='40' height='36' rx='8' ry='8'/><rect x='24' y='10' width='16' height='8' rx='2'/><circle cx='24' cy='32' r='4' fill='%23f8fafc'/><circle cx='40' cy='32' r='4' fill='%23f8fafc'/><rect x='24' y='40' width='16' height='4' rx='2' fill='%23f8fafc'/></g></svg>"""
 
 # -----------------------------------------------------------------------------
 # PAGE CONFIG
@@ -19,62 +21,36 @@ st.set_page_config(
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "dark_mode" not in st.session_state:
-    st.session_state.dark_mode = True
 
-# Theme colors based on mode
-dark_mode = st.session_state.dark_mode
-
-if dark_mode:
-    bg_gradient = "linear-gradient(135deg, #000000, #0f0f23, #1a1a2e, #000000)"
-    text_primary = "#ffffff"
-    text_secondary = "#b0b0c0"
-    title_gradient = "linear-gradient(135deg, #ffffff 0%, #a0a0ff 100%)"
-    glass_bg = "rgba(255, 255, 255, 0.05)"
-    glass_border = "rgba(255, 255, 255, 0.1)"
-    glass_hover_bg = "rgba(255, 255, 255, 0.08)"
-    glass_hover_border = "rgba(255, 255, 255, 0.15)"
-    user_msg_bg = "rgba(0, 122, 255, 0.15)"
-    user_msg_border = "rgba(0, 122, 255, 0.3)"
-    assistant_msg_bg = "rgba(150, 100, 255, 0.1)"
-    assistant_msg_border = "rgba(180, 150, 255, 0.2)"
-    btn_bg = "rgba(255, 255, 255, 0.08)"
-    btn_border = "rgba(255, 255, 255, 0.15)"
-    btn_hover = "rgba(255, 255, 255, 0.12)"
-    particle_1 = "rgba(0, 122, 255, 0.15)"
-    particle_2 = "rgba(150, 100, 255, 0.12)"
-    particle_3 = "rgba(100, 150, 255, 0.1)"
-    info_bg = "rgba(0, 122, 255, 0.2)"
-    info_border = "rgba(0, 122, 255, 0.4)"
-    error_bg = "rgba(255, 100, 100, 0.15)"
-    error_border = "rgba(255, 100, 100, 0.3)"
-    bottom_bar_bg = "rgba(255, 255, 255, 0.05)"
-    input_container_bg = "rgba(255, 255, 255, 0.05)"
-else:
-    bg_gradient = "linear-gradient(135deg, #f5f5f7, #e8e8ed, #d1d1d6, #f5f5f7)"
-    text_primary = "#000000"
-    text_secondary = "#6e6e73"
-    title_gradient = "linear-gradient(135deg, #1d1d1f 0%, #0066cc 100%)"
-    glass_bg = "rgba(255, 255, 255, 0.7)"
-    glass_border = "rgba(0, 0, 0, 0.1)"
-    glass_hover_bg = "rgba(255, 255, 255, 0.9)"
-    glass_hover_border = "rgba(0, 0, 0, 0.15)"
-    user_msg_bg = "rgba(0, 122, 255, 0.12)"
-    user_msg_border = "rgba(0, 122, 255, 0.25)"
-    assistant_msg_bg = "rgba(255, 255, 255, 0.8)"
-    assistant_msg_border = "rgba(0, 0, 0, 0.12)"
-    btn_bg = "rgba(0, 0, 0, 0.05)"
-    btn_border = "rgba(0, 0, 0, 0.1)"
-    btn_hover = "rgba(0, 0, 0, 0.08)"
-    particle_1 = "rgba(0, 122, 255, 0.08)"
-    particle_2 = "rgba(150, 100, 255, 0.06)"
-    particle_3 = "rgba(100, 150, 255, 0.05)"
-    info_bg = "rgba(0, 122, 255, 0.25)"
-    info_border = "rgba(0, 122, 255, 0.5)"
-    error_bg = "rgba(255, 59, 48, 0.15)"
-    error_border = "rgba(255, 59, 48, 0.35)"
-    bottom_bar_bg = "#ffffff"
-    input_container_bg = "#ffffff"
+# Single light theme
+bg_gradient = "linear-gradient(135deg, #f5f5f7, #e8e8ed, #d1d1d6, #f5f5f7)"
+text_primary = "#000000"
+text_secondary = "#6e6e73"
+title_gradient = "linear-gradient(135deg, #1d1d1f 0%, #0066cc 100%)"
+glass_bg = "rgba(255, 255, 255, 0.7)"
+glass_border = "rgba(0, 0, 0, 0.1)"
+glass_hover_bg = "rgba(255, 255, 255, 0.9)"
+glass_hover_border = "rgba(0, 0, 0, 0.15)"
+user_msg_bg = "rgba(0, 122, 255, 0.12)"
+user_msg_border = "#b7c6d8"
+assistant_msg_bg = "rgba(255, 255, 255, 0.9)"
+assistant_msg_border = "#c2c9d4"
+btn_bg = "rgba(0, 0, 0, 0.05)"
+btn_border = "rgba(0, 0, 0, 0.1)"
+btn_hover = "rgba(0, 0, 0, 0.08)"
+particle_1 = "rgba(0, 122, 255, 0.08)"
+particle_2 = "rgba(150, 100, 255, 0.06)"
+particle_3 = "rgba(100, 150, 255, 0.05)"
+info_bg = "rgba(0, 122, 255, 0.25)"
+info_border = "rgba(0, 122, 255, 0.5)"
+error_bg = "rgba(255, 59, 48, 0.15)"
+error_border = "rgba(255, 59, 48, 0.35)"
+bottom_bar_bg = "#ffffff"
+input_container_bg = "#ffffff"
+input_border = "#8c95a3"
+avatar_bg = "#f3f4f6"
+avatar_border = "#cbd5e1"
+avatar_icon = "#0f172a"
 
 # Custom CSS for iOS-inspired glass design
 st.markdown(f"""
@@ -82,7 +58,7 @@ st.markdown(f"""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
     /* Main app background with animated gradient */
-    .stApp {{
+    body, .stApp {{
         background: {bg_gradient};
         background-size: 400% 400%;
         animation: gradientShift 20s ease infinite;
@@ -151,26 +127,32 @@ st.markdown(f"""
     .stChatMessage {{
         background-color: transparent !important;
         margin: 12px 0;
+        display: flex;
+        justify-content: center;
     }}
 
     /* iOS-style glass effect for message bubbles */
     [data-testid="stChatMessageContent"] {{
-        background: {glass_bg};
-        backdrop-filter: blur(30px) saturate(180%);
-        -webkit-backdrop-filter: blur(30px) saturate(180%);
-        border: 1px solid {glass_border};
-        border-radius: 20px;
+        background: {assistant_msg_bg};
+        border: 1px solid {assistant_msg_border};
+        border-radius: 18px;
         padding: 16px 20px;
         color: {text_primary};
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
-        transition: all 0.2s ease;
+        box-shadow: 0 8px 24px 0 rgba(0, 0, 0, 0.12);
+        width: 90%;
+        max-width: 1100px;
     }}
 
-    [data-testid="stChatMessageContent"]:hover {{
-        background: {glass_hover_bg};
-        border: 1px solid {glass_hover_border};
-        transform: translateY(-1px);
-        box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.25);
+    /* Strip any inner borders/boxes inside chat bubbles */
+    [data-testid="stChatMessageContent"] div,
+    [data-testid="stChatMessageContent"] p,
+    [data-testid="stChatMessageContent"] pre,
+    [data-testid="stChatMessageContent"] code {{
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }}
 
     /* User message - iOS blue */
@@ -181,12 +163,14 @@ st.markdown(f"""
 
     /* Assistant message */
     .stChatMessage:has([data-testid="chatAvatarIcon-assistant"]) [data-testid="stChatMessageContent"] {{
-        background: {assistant_msg_bg};
+        background: linear-gradient(135deg, rgba(30,64,175,0.32), rgba(59,130,246,0.28), rgba(99,102,241,0.24));
         border: 1px solid {assistant_msg_border};
     }}
 
     /* Bottom bar container */
-    [data-testid="stBottom"] {{
+    [data-testid="stBottom"],
+    [data-testid="stChatInputRoot"],
+    [data-testid="stChatInput"] > div:first-child {{
         background: {bottom_bar_bg} !important;
         backdrop-filter: blur(30px) saturate(180%);
         -webkit-backdrop-filter: blur(30px) saturate(180%);
@@ -198,10 +182,10 @@ st.markdown(f"""
         background: {input_container_bg} !important;
         backdrop-filter: blur(30px) saturate(180%);
         -webkit-backdrop-filter: blur(30px) saturate(180%);
-        border: 1px solid {glass_border} !important;
-        border-radius: 28px;
-        padding: 4px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        border: 2px solid {input_border} !important;
+        border-radius: 18px;
+        padding: 6px;
+        box-shadow: 0 6px 18px 0 rgba(0, 0, 0, 0.28);
     }}
 
     .stChatInput textarea {{
@@ -341,12 +325,29 @@ st.markdown(f"""
         padding: 0 8px;
     }}
 
-    /* Avatar styling */
+    /* Avatar styling - simple, no boxes */
     [data-testid="chatAvatarIcon-user"],
     [data-testid="chatAvatarIcon-assistant"] {{
-        background: {glass_bg} !important;
-        border: 1px solid {glass_border} !important;
-        backdrop-filter: blur(10px);
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+    }}
+
+    [data-testid="chatAvatarIcon-user"] *,
+    [data-testid="chatAvatarIcon-assistant"] * {{
+        color: {avatar_icon} !important;
+        fill: {avatar_icon} !important;
+        stroke: {avatar_icon} !important;
+    }}
+
+    [data-testid="chatAvatarIcon-user"] img,
+    [data-testid="chatAvatarIcon-assistant"] img {{
+        width: 36px;
+        height: 36px;
+        object-fit: contain;
     }}
 
     /* Animated background particles */
@@ -387,149 +388,8 @@ st.markdown(f"""
         z-index: 1;
     }}
 
-    /* iOS-style Toggle Switch */
-    .theme-switch {{
-        width: 90px;
-        height: 45px;
-        cursor: pointer;
-    }}
-
-    .slider-track {{
-        position: relative;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
-        border-radius: 45px;
-        box-shadow:
-            inset 0 2px 8px rgba(0, 0, 0, 0.5),
-            0 4px 20px rgba(0, 0, 0, 0.3);
-        border: 2px solid rgba(255, 255, 255, 0.1);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    }}
-
-    .theme-switch.active .slider-track {{
-        background: linear-gradient(135deg, #ff9500 0%, #ff7a00 100%);
-        border: 2px solid rgba(255, 200, 100, 0.3);
-        box-shadow:
-            inset 0 2px 8px rgba(0, 0, 0, 0.2),
-            0 4px 20px rgba(255, 149, 0, 0.3);
-    }}
-
-    .slider-thumb {{
-        position: absolute;
-        top: 3px;
-        left: 3px;
-        width: 37px;
-        height: 37px;
-        background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
-        border-radius: 50%;
-        box-shadow:
-            0 2px 8px rgba(0, 0, 0, 0.3),
-            0 1px 2px rgba(0, 0, 0, 0.2);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 18px;
-    }}
-
-    .theme-switch.active .slider-thumb {{
-        transform: translateX(45px);
-    }}
-
-    .slider-thumb::before {{
-        content: "🌙";
-    }}
-
-    .theme-switch.active .slider-thumb::before {{
-        content: "☀️";
-    }}
-
-    .slider-icons {{
-        position: absolute;
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 12px;
-        pointer-events: none;
-    }}
-
-    .icon-left, .icon-right {{
-        font-size: 16px;
-        opacity: 0.4;
-        transition: opacity 0.3s;
-    }}
-
-    .theme-switch .icon-left {{
-        opacity: 0.6;
-    }}
-
-    .theme-switch.active .icon-left {{
-        opacity: 0.3;
-    }}
-
-    .theme-switch .icon-right {{
-        opacity: 0.3;
-    }}
-
-    .theme-switch.active .icon-right {{
-        opacity: 0.7;
-    }}
 </style>
 """, unsafe_allow_html=True)
-
-# -----------------------------------------------------------------------------
-# HEADER WITH THEME TOGGLE
-# -----------------------------------------------------------------------------
-# Display toggle switch visual with clickable overlay
-toggle_active = "active" if st.session_state.dark_mode else ""
-
-# Create invisible button overlay on toggle position
-col_toggle, col_spacer = st.columns([1, 10])
-with col_toggle:
-    st.markdown(f"""
-    <div style="position: fixed; top: 20px; right: 20px; z-index: 999;">
-        <div class="theme-switch {toggle_active}">
-            <div class="slider-track">
-                <div class="slider-thumb"></div>
-                <div class="slider-icons">
-                    <span class="icon-left">🌙</span>
-                    <span class="icon-right">☀️</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Invisible button overlay
-    st.markdown("""
-    <style>
-    div[data-testid="column"]:first-child button {
-        position: fixed !important;
-        top: 20px !important;
-        right: 20px !important;
-        width: 90px !important;
-        height: 45px !important;
-        z-index: 1000 !important;
-        background: transparent !important;
-        border: none !important;
-        border-radius: 45px !important;
-        padding: 0 !important;
-        box-shadow: none !important;
-    }
-    div[data-testid="column"]:first-child button:hover {
-        background: transparent !important;
-        border: none !important;
-        transform: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    if st.button("", key="theme_toggle", help="Toggle theme"):
-        st.session_state.dark_mode = not st.session_state.dark_mode
-        st.rerun()
 
 st.title("Agentic AI Powered Forecast Engine")
 st.markdown("### Retail Cases and Trucks Forecasting")
@@ -593,32 +453,32 @@ def display_prediction_response(data):
 
     st.markdown("---")
 
-    # Details
-    st.markdown(f"**📅 Forecast Date:** {data['date']}")
+    # Details in two columns (2x4-style grid)
+    left, right = st.columns(2)
+    with left:
+        st.markdown(f"**📅 Forecast Date:** {data['date']}")
+        if data.get("state"):
+            st.markdown(f"**🏠 State:** {data['state']}")
+        source_label = "📈 Model Forecast" if data["source"] in ["model", "model_search"] else "📜 Historical Value"
+        st.markdown(f"**📘 Data Source:** {source_label}")
 
-    source_label = "📈 Model Forecast" if data["source"] in ["model", "model_search"] else "📜 Historical Value"
-    st.markdown(f"**📘 Data Source:** {source_label}")
+    with right:
+        if data.get("dept_name"):
+            st.markdown(f"**🏢 Dept Name:** {data['dept_name']}")
+        if data.get("dept_id"):
+            st.markdown(f"**🏢 Dept ID:** {data['dept_id']}")
+        if data.get("store_id"):
+            st.markdown(f"**🏪 Store ID:** {data['store_id']}")
 
-    if data.get("state"):
-        st.markdown(f"**🏠 State:** {data['state']}")
-
-    if data.get("store_id"):
-        st.markdown(f"**🏪 Store ID:** {data['store_id']}")
-
-    if data.get("dept_id"):
-        st.markdown(f"**🏢 Dept ID:** {data['dept_id']}")
-
-    if data.get("dept_name"):
-        st.markdown(f"**🏢 Dept Name:** {data['dept_name']}")
-
-    st.caption("Prediction generated using advanced time-series ensemble models.")
+    st.caption("Prediction generated using advanced time-series models.")
 
 # -----------------------------------------------------------------------------
 # CHAT DISPLAY
 # -----------------------------------------------------------------------------
 # Display chat messages from history
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
+    avatar_choice = USER_AVATAR if message["role"] == "user" else ASSISTANT_AVATAR
+    with st.chat_message(message["role"], avatar=avatar_choice):
         if message.get("type") == "prediction":
             display_prediction_response(message["data"])
         elif message.get("type") == "error":
@@ -636,11 +496,11 @@ if prompt := st.chat_input("Ask anything", key="chat_input"):
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     # Display user message
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(prompt)
 
     # Display assistant response
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         with st.spinner("Thinking..."):
             try:
                 # Extract previous user queries for conversation context

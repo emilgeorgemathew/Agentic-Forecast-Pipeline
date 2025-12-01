@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(streamlit run:*)",
+      "Bash(open http://localhost:8501)",
+      "Bash(uvicorn app:app:*)",
+      "Bash(python:*)",
+      "Bash(python3 -c \"import json; nb = json.load(open(''Walmart_Forecasting(Final RF).ipynb'')); print(f''Total cells: {len(nb[\"\"cells\"\"])}'')\")",
+      "Bash(python3:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(kill:*)",
+      "Bash(curl:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
