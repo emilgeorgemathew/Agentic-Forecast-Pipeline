@@ -50,7 +50,7 @@ if dark_mode:
     error_border = "rgba(255, 100, 100, 0.3)"
 else:
     bg_gradient = "linear-gradient(135deg, #f5f5f7, #e8e8ed, #d1d1d6, #f5f5f7)"
-    text_primary = "#1d1d1f"
+    text_primary = "#000000"
     text_secondary = "#6e6e73"
     title_gradient = "linear-gradient(135deg, #1d1d1f 0%, #0066cc 100%)"
     glass_bg = "rgba(255, 255, 255, 0.7)"
