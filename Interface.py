@@ -5,6 +5,15 @@ from datetime import datetime
 import dateparser
 import os
 
+# -----------------------------------------------------------------------------
+# PAGE CONFIG - Must be called FIRST before any other Streamlit commands
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="Agentic Forecast App",
+    layout="centered",
+    page_icon="🧠"
+)
+
 # Use environment variable for API URL (supports deployment to different backends)
 # For Streamlit Cloud: Set API_URL in Secrets section
 # For Render: Set API_URL environment variable
@@ -13,17 +22,9 @@ try:
     API_URL = st.secrets.get("API_URL", os.environ.get("API_URL", "http://localhost:8000/predict"))
 except:
     API_URL = os.environ.get("API_URL", "http://localhost:8000/predict")
+
 USER_AVATAR = """data:image/svg+xml;utf8,<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'><g fill='%23111826'><circle cx='32' cy='22' r='12'/><path d='M12 54c0-11 8.5-18 20-18s20 7 20 18v4H12z' /></g></svg>"""
 ASSISTANT_AVATAR = """data:image/svg+xml;utf8,<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'><g fill='%23111826'><rect x='12' y='14' width='40' height='36' rx='8' ry='8'/><rect x='24' y='10' width='16' height='8' rx='2'/><circle cx='24' cy='32' r='4' fill='%23f8fafc'/><circle cx='40' cy='32' r='4' fill='%23f8fafc'/><rect x='24' y='40' width='16' height='4' rx='2' fill='%23f8fafc'/></g></svg>"""
-
-# -----------------------------------------------------------------------------
-# PAGE CONFIG
-# -----------------------------------------------------------------------------
-st.set_page_config(
-    page_title="Agentic Forecast App",
-    layout="centered",
-    page_icon="🧠"
-)
 
 # Initialize session state
 if "messages" not in st.session_state:
