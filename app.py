@@ -1589,6 +1589,18 @@ def get_state_breakdown(state_name: str, target_date: date) -> list[Dict[str, An
                 })
             except Exception as e:
                 print(f"Error predicting for {combo['store_id']}/{combo['dept_id']}: {e}")
+                continue
+                
+    return sorted(results, key=lambda x: (x["store_id"], x["dept_id"]))
+
+
+@app.post("/predict", response_model=PredictionResponse)
+def predict_trucks_and_cases(req: QueryRequest):
+    user_query = req.query or ""
+    conversation_history = req.conversation_history or []
+
+    # 1. Gemini Extraction
+    extracted = call_gemini_extract(user_query, conversation_history)
 
     # 2. Local Fallback / Refinement
     query_lower = user_query.lower()
