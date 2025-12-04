@@ -1519,8 +1519,11 @@ def predict_with_models(feature_row: pd.DataFrame) -> Dict[str, float]:
 
     # Clamp trucks to 1-4 range
     trucks_int = max(1, min(4, int(round(trucks_pred))))
+    
+    # Round cases to integer
+    cases_int = int(round(cases_pred))
 
-    return {"trucks": float(trucks_int), "cases": cases_pred}
+    return {"trucks": float(trucks_int), "cases": float(cases_int)}
 
 
 def get_state_breakdown(state_name: str, target_date: date) -> list[Dict[str, Any]]:
@@ -1640,6 +1643,22 @@ def predict_trucks_and_cases(req: QueryRequest):
             state_name = STATE_MAP.get(state_name.lower())
     if not state_name:
         state_name = extract_state_fallback(user_query)
+
+    # 4) Infer State from Store ID if missing
+    if not state_name and extracted.get("store_id"):
+        try:
+            store_id_val = int(extracted["store_id"])
+            if "store_id" in df_hist.columns and "state_name" in df_hist.columns:
+                # Find the state for this store
+                store_matches = df_hist[df_hist["store_id"] == store_id_val]
+                if not store_matches.empty:
+                    inferred_state = store_matches.iloc[0]["state_name"]
+                    if isinstance(inferred_state, str):
+                        state_name = inferred_state.strip().upper()
+                        extracted["state_name"] = state_name # Update extracted dict too
+                        print(f"=== DEBUG: Inferred state {state_name} from store_id {store_id_val}")
+        except Exception as e:
+            print(f"Error inferring state from store_id: {e}")
 
     # Check for irrelevant/general queries
     # If we have no location context and it's not a specific search
