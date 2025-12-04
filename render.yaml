@@ -1,0 +1,31 @@
+services:
+  # FastAPI Backend Service
+  - type: web
+    name: agentic-forecast-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: MODEL_NAME
+        value: gemini-1.5-flash
+      - key: FEATURE_MEANS_JSON
+        value: feature_means.json
+      - key: DATE_TRUCKS_CASES_CSV
+        value: date_trucks_cases.csv
+      - key: TRUCKS_MODEL_PATH
+        value: best_trucks_lgbm.pkl
+      - key: CASES_MODEL_PATH
+        value: best_cases_catboost_ts_cv.cbm
+
+  # Streamlit Frontend Service
+  - type: web
+    name: agentic-forecast-frontend
+    env: python
+    buildCommand: pip install -r requirements.txt && pip install streamlit
+    startCommand: streamlit run Interface.py --server.port=$PORT --server.address=0.0.0.0
+    envVars:
+      - key: API_URL
+        value: https://agentic-forecast-pipeline-1.onrender.com/predict
