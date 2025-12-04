@@ -201,6 +201,15 @@ st.markdown(f"""
         box-shadow: 0 6px 18px 0 rgba(0, 0, 0, 0.28);
     }}
 
+    /* Fix for weird labels and error states */
+    .stChatInput label {{
+        display: none !important;
+    }}
+    
+    .stChatInputContainer[data-testid="stChatInput"] {{
+        border-color: {input_border} !important;
+    }}
+
     .stChatInput textarea {{
         background-color: transparent !important;
         color: {text_primary} !important;
@@ -389,6 +398,14 @@ st.markdown(f"""
 
 </style>
 """, unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# HEADER
+# -----------------------------------------------------------------------------
+st.markdown("<h1>Agentic AI Powered Forecast Engine</h1>", unsafe_allow_html=True)
+st.markdown("<p style='color: #6e6e73; margin-top: -10px; font-size: 1.1rem;'>Retail Cases and Trucks Forecasting</p>", unsafe_allow_html=True)
+st.markdown("---")
+
 # -----------------------------------------------------------------------------
 # HELPER FUNCTIONS - MUST BE DEFINED BEFORE USE
 # -----------------------------------------------------------------------------
