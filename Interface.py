@@ -15,6 +15,18 @@ st.set_page_config(
     page_icon="🧠"
 )
 
+# Debug Info in Sidebar
+with st.sidebar:
+    st.markdown("### Debug Info")
+    try:
+        api_url_debug = st.secrets.get("API_URL", os.environ.get("API_URL", "http://localhost:8000/predict"))
+        st.caption(f"API URL: `{api_url_debug}`")
+        st.caption(f"Secrets keys: {list(st.secrets.keys())}")
+    except Exception as e:
+        st.caption(f"Secrets Error: {e}")
+        st.caption(f"Env API_URL: {os.environ.get('API_URL', 'Not Set')}")
+    st.markdown("---")
+
 # Use environment variable for API URL (supports deployment to different backends)
 # For Streamlit Cloud: Set API_URL in Secrets section
 # For Render: Set API_URL environment variable
