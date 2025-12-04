@@ -1889,3 +1889,9 @@ def get_state_breakdown(state_name: str, target_date: date) -> list[Dict[str, An
 def health_check():
     """Health check endpoint for Render"""
     return {"status": "ok"}
+
+@app.get("/")
+def root():
+    """Root endpoint to verify API is running"""
+    return {"message": "Agentic Forecast API is running. Use /predict for predictions."}
+
