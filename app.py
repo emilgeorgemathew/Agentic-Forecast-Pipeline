@@ -1884,3 +1884,8 @@ def get_state_breakdown(state_name: str, target_date: date) -> list[Dict[str, An
         dept_name=final_dept_desc,
         raw_extracted={"dt": extracted.get("dt"), "state_name": state_name, "store_id": extracted.get("store_id"), "dept_id": extracted.get("dept_id"), "dept_desc": extracted.get("dept_desc")},
     )
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint for Render"""
+    return {"status": "ok"}
