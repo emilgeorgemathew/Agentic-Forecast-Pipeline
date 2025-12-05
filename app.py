@@ -3,7 +3,7 @@ import json
 import pickle
 import re
 from datetime import date, datetime, timedelta
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Tuple
 
 import pandas as pd
 import dateparser
@@ -920,207 +920,6 @@ class QueryRequest(BaseModel):
 class PredictionResponse(BaseModel):
     date: str
     source: str  # "historical" or "model"
-def get_date_range_data(start_date: Optional[str] = None, end_date: Optional[str] = None,
-                        store_id: Optional[int] = None, dept_id: Optional[int] = None) -> str:
-    """
-    Get summary data for a date range.
-    """
-    try:
-        df_filtered = df_hist.copy()
-
-        # Apply date filters
-        if start_date:
-            df_filtered = df_filtered[df_filtered["dt"] >= pd.to_datetime(start_date)]
-        if end_date:
-            df_filtered = df_filtered[df_filtered["dt"] <= pd.to_datetime(end_date)]
-        if store_id:
-            df_filtered = df_filtered[df_filtered["store_id"] == store_id]
-        if dept_id:
-            df_filtered = df_filtered[df_filtered["dept_id"] == dept_id]
-
-        if len(df_filtered) == 0:
-            return "No data found for the specified date range."
-
-        # Calculate summary
-        total_cases = df_filtered["cases"].sum()
-        total_trucks = df_filtered["trucks"].sum()
-        avg_cases = df_filtered["cases"].mean()
-        avg_trucks = df_filtered["trucks"].mean()
-        date_start = df_filtered["dt"].min().strftime('%Y-%m-%d')
-        date_end = df_filtered["dt"].max().strftime('%Y-%m-%d')
-
-        result = f"📅 **Data Summary: {date_start} to {date_end}**\n\n"
-        result += f"• **Total Cases:** {total_cases:,.0f}\n"
-        result += f"• **Total Trucks:** {total_trucks:,.0f}\n"
-        result += f"• **Average Cases per Day:** {avg_cases:.1f}\n"
-        result += f"• **Average Trucks per Day:** {avg_trucks:.1f}\n"
-        result += f"• **Total Records:** {len(df_filtered):,}\n"
-
-        return result
-    except Exception as e:
-        return f"I encountered an error: {str(e)}"
-
-
-def handle_general_query(user_query: str, conversation_history: Optional[list] = None) -> str:
-    """
-    Use Gemini to handle general questions and conversation about the forecasting system.
-    """
-    try:
-        # Format conversation history for context
-        hist_text = ""
-        if conversation_history:
-            hist_text = "\n".join([f"- {msg}" for msg in conversation_history[-3:]])  # Last 3 messages
-        else:
-            hist_text = "(No previous conversation)"
-
-        # Create prompt
-        prompt = GENERAL_CHAT_PROMPT.format(
-            question=user_query,
-            history=hist_text
-        )
-
-        # Call Gemini with next available API key
-        client = get_next_client()
-        resp = client.models.generate_content(
-            model=GEMINI_MODEL_NAME,
-            contents=prompt,
-        )
-
-        return resp.text.strip()
-
-    except Exception as e:
-        return "How can I help you today?"
-
-
-def analyze_data_with_gemini(user_query: str) -> str:
-    """
-    Use Gemini to analyze the historical data and answer analytical questions.
-    """
-    try:
-        # Get data summary for Gemini
-        total_records = len(df_hist)
-        date_range = f"{MIN_DATE} to {MAX_DATE}"
-
-        # Get daily statistics
-        daily_stats = df_hist.groupby('dt').agg({
-            'cases': ['sum', 'mean', 'max', 'min'],
-            'trucks': ['sum', 'mean', 'max', 'min']
-        }).round(2)
-
-        # Get top 10 days by cases
-        top_cases_days = df_hist.nlargest(10, 'cases')[['dt', 'cases', 'trucks']].to_string(index=False)
-
-        # Get truck distribution
-        truck_dist = df_hist['trucks'].value_counts().sort_index().to_string()
-
-        # Overall statistics
-        overall_stats = f"""
-Total Records: {total_records}
-Date Range: {date_range}
-Total Cases: {df_hist['cases'].sum():,.0f}
-Average Cases per Record: {df_hist['cases'].mean():.2f}
-Max Cases (single record): {df_hist['cases'].max():.2f}
-Min Cases (single record): {df_hist['cases'].min():.2f}
-
-Total Trucks: {df_hist['trucks'].sum():,.0f}
-Average Trucks per Record: {df_hist['trucks'].mean():.2f}
-
-Truck Distribution (count of records):
-{truck_dist}
-
-Top 10 Records by Cases:
-{top_cases_days}
-"""
-
-        # Create prompt
-        prompt = ANALYSIS_PROMPT.format(
-            data_summary=overall_stats,
-            question=user_query
-        )
-
-        if not GEMINI_AVAILABLE:
-            return "I cannot perform advanced data analysis right now because the AI service is not configured (missing API Key)."
-
-        # Call Gemini with next available API key
-        client = get_next_client()
-        resp = client.models.generate_content(
-            model=GEMINI_MODEL_NAME,
-            contents=prompt,
-        )
-
-        return resp.text.strip()
-
-    except Exception as e:
-        return f"I encountered an error analyzing the data: {str(e)}"
-
-
-def call_gemini_extract(user_query: str, conversation_history: Optional[list] = None, previous_extraction: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Use google-genai v1beta client to get a JSON with dt, state_name, store_id.
-    If anything goes wrong (model error, quota, bad JSON), we return {} and
-    let local fallback handle it.
-
-    Args:
-        user_query: Current user query
-        conversation_history: Optional list of previous queries for context
-        previous_extraction: Optional dict with the last successful extraction for context inheritance
-    """
-    try:
-        # Build input with conversation context if available
-        input_parts = [EXTRACT_PROMPT]
-
-        if conversation_history or previous_extraction:
-            # Add conversation context
-            context = "\n\n"
-            if conversation_history:
-                context += "Conversation history:\n"
-                for i, prev_query in enumerate(conversation_history[-2:], 1):  # Use last 2 queries
-                    context += f"{i}. {prev_query}\n"
-
-            if previous_extraction:
-                context += f"\nPrevious extraction: {json.dumps(previous_extraction)}\n"
-
-            context += f"\nCurrent query: {user_query}"
-            input_parts.append(context)
-        else:
-            input_parts.append(user_query)
-
-        if not GEMINI_AVAILABLE:
-            return {}
-
-        # Use next available API key
-        client = get_next_client()
-        resp = client.models.generate_content(
-            model=GEMINI_MODEL_NAME,
-            contents="\n".join(input_parts),
-        )
-        text = resp.text.strip()
-
-        # In case Gemini ever adds extra text (it shouldn't), slice JSON
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1:
-            return {}
-        json_str = text[start : end + 1]
-
-        return json.loads(json_str)
-    except Exception:
-        # silent fallback; we don't crash the API if Gemini dies
-        return {}
-
-
-# ============================================================
-# FASTAPI MODELS
-# ============================================================
-
-class QueryRequest(BaseModel):
-    query: str
-    conversation_history: Optional[list] = None  # List of previous queries for context
-
-
-class PredictionResponse(BaseModel):
-    date: str
-    source: str  # "historical" or "model"
     Cases: float
     trucks: float
     state: Optional[str]
@@ -1130,6 +929,7 @@ class PredictionResponse(BaseModel):
     message: Optional[str] = None
     raw_extracted: Dict[str, Any]
     breakdown_data: Optional[list[Dict[str, Any]]] = None
+    debug_info: Optional[str] = None
 
 
 app = FastAPI(title="Trucks & Cases Prediction API", version="1.0.0")
@@ -1157,25 +957,42 @@ def extract_state_fallback(text: str) -> Optional[str]:
     return None
 
 
-def robust_date_parse(full_query: str) -> date:
+def robust_date_parse(full_query: str) -> Tuple[date, str]:
     """
     Strong parser that tries multiple strategies using dateparser.
-    Handles things like:
-      - "value for virginia 9th september 2025"
-      - "Whats the value for Maryland store 10001 on Jan 1 2025"
-      - "2025/11/17"
-      - "tomorrow", "next Friday" (relative dates)
+    Returns (date, debug_log_string)
     """
+    logs = []
+    logs.append(f"Parsing query: '{full_query}'")
+    
     # Dateparser settings for robust parsing
     parsing_settings = {
         "RELATIVE_BASE": datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
         "PREFER_DATES_FROM": "future"
     }
 
+    # Pre-process for common typos (e.g., "Thurs.day" -> "Thursday")
+    # This handles "Mon.day", "Tues.day", "Wed.nes.day" etc.
+    typo_map = {
+        r"\bmon\.day\b": "Monday",
+        r"\btues\.day\b": "Tuesday",
+        r"\bwed\.nes\.day\b": "Wednesday",
+        r"\bwed\.day\b": "Wednesday",
+        r"\bthurs\.day\b": "Thursday",
+        r"\bfri\.day\b": "Friday",
+        r"\bsat\.ur\.day\b": "Saturday",
+        r"\bsat\.day\b": "Saturday",
+        r"\bsun\.day\b": "Sunday"
+    }
+    for pattern, replacement in typo_map.items():
+        full_query = re.sub(pattern, replacement, full_query, flags=re.IGNORECASE)
+        logs.append(f"Fixed typo: {pattern} -> {replacement}")
+
     # 1. Try parsing the full query
     dt = dateparser.parse(full_query, languages=['en'], settings=parsing_settings)
     if dt is not None:
-        return dt.date()
+        logs.append(f"Method 1 success: {dt.date()}")
+        return dt.date(), "\n".join(logs)
 
     # 2. Try to grab date-like chunks
     patterns = [
@@ -1183,32 +1000,69 @@ def robust_date_parse(full_query: str) -> date:
         r"\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}",  # 17/11/2025
         r"\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{2,4}",  # 9th September 2025
         r"\w+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{2,4}",  # September 9th, 2025
-        r"\bnext\s+\w+\b",  # next Friday
+        r"\bnext\s+\w+\b",  # next Friday, next month, next week
         r"\blast\s+\w+\b",  # last Friday
+        r"\btomorrow\b",    # tomorrow
+        r"\btoday\b",       # today
     ]
     for pat in patterns:
         m = re.search(pat, full_query, flags=re.IGNORECASE)
         if m:
             chunk = m.group(0)
-            dt2 = dateparser.parse(chunk, languages=['en'], settings=parsing_settings)
+            logs.append(f"Found chunk: '{chunk}'")
+            
+            # Special handling for "next [day]" to ensure it's future
+            if "next" in chunk.lower():
+                parsing_settings["PREFER_DATES_FROM"] = "future"
+                
+                # Handle "next month"
+                if "month" in chunk.lower():
+                    # dateparser handles "next month" as +1 month from today
+                    dt2 = dateparser.parse("next month", languages=['en'], settings=parsing_settings)
+                # Handle "next week"
+                elif "week" in chunk.lower():
+                    dt2 = dateparser.parse("next week", languages=['en'], settings=parsing_settings)
+                else:
+                    # Try parsing the chunk as is
+                    dt2 = dateparser.parse(chunk, languages=['en'], settings=parsing_settings)
+                    
+                    # If that fails, try parsing just the day name (e.g. "Saturday")
+                    if dt2 is None:
+                        day_name = chunk.lower().replace("next", "").strip()
+                        logs.append(f"Retrying with day name: '{day_name}'")
+                        dt2 = dateparser.parse(day_name, languages=['en'], settings=parsing_settings)
+            else:
+                dt2 = dateparser.parse(chunk, languages=['en'], settings=parsing_settings)
+
             if dt2 is not None:
-                return dt2.date()
+                # If "next tuesday" returns today (if today is tuesday), add 7 days
+                # But don't do this for "next month" or "next week" which are handled differently
+                if "next" in chunk.lower() and "month" not in chunk.lower() and "week" not in chunk.lower() and dt2.date() <= datetime.now().date():
+                     dt2 = dt2 + timedelta(days=7)
+                logs.append(f"Method 2 success: {dt2.date()}")
+                return dt2.date(), "\n".join(logs)
 
     # If no date parsed, default to tomorrow
     default_dt = (datetime.now() + timedelta(days=1)).date()
-    return default_dt
+    logs.append(f"Fallback to default: {default_dt}")
+    return default_dt, "\n".join(logs)
 
 
-def parse_dt_from_extracted(extracted: Dict[str, Any], original_query: str) -> date:
+def parse_dt_from_extracted(extracted: Dict[str, Any], original_query: str) -> Tuple[date, str]:
     """
     If Gemini gave us a dt → try to parse it.
     Otherwise fall back to robust_date_parse on the original text.
+    Returns (date, debug_log)
     """
+    # Trust local parser for "next [day]" queries as Gemini often fails relative dates
+    if re.search(r"\bnext\s+\w+\b", original_query, re.IGNORECASE):
+        return robust_date_parse(original_query)
+
     dt_str = extracted.get("dt")
     if dt_str:
         # try ISO first
         try:
-            return date.fromisoformat(dt_str[:10])
+            return date.fromisoformat(dt_str[:10]), f"Used extracted ISO date: {dt_str}"
         except Exception:
             # fall back to dateparser on that string
             parsing_settings = {
@@ -1216,10 +1070,9 @@ def parse_dt_from_extracted(extracted: Dict[str, Any], original_query: str) -> d
             }
             dt = dateparser.parse(dt_str, languages=['en'], settings=parsing_settings)
             if dt is not None:
-                return dt.date()
+                return dt.date(), f"Parsed extracted date '{dt_str}': {dt.date()}"
     # fallback to full-query parsing
     return robust_date_parse(original_query)
-
 
 def get_store_dept_metadata(store_id: Optional[int] = None,
                            dept_id: Optional[int] = None,
@@ -1625,13 +1478,11 @@ def predict_trucks_and_cases(req: QueryRequest):
                     break
 
     # 3) Date parsing (Gemini dt → robust fallback)
-    try:
-        dt = parse_dt_from_extracted(extracted, user_query)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid date: {e}")
+    # Try to get date from Gemini extraction first, then fallback
+    target_date, date_log = parse_dt_from_extracted(extracted, user_query)
 
     # Check date range
-    if dt < MIN_DATE:
+    if target_date < MIN_DATE:
         raise HTTPException(status_code=400, detail="Data is unavailable for dates before 2024-03-14.")
 
     # 3) State: Gemini first, fallback local
@@ -1645,6 +1496,14 @@ def predict_trucks_and_cases(req: QueryRequest):
         state_name = extract_state_fallback(user_query)
 
     # 4) Infer State from Store ID if missing
+    # First, ensure we have a store_id
+    if not extracted.get("store_id"):
+        store_match = re.search(r'store\s+#?(\d+)', user_query, re.IGNORECASE)
+        if store_match:
+            extracted["store_id"] = int(store_match.group(1))
+            print(f"=== DEBUG: Regex found store_id {extracted['store_id']}")
+
+    debug_msg = ""
     if not state_name and extracted.get("store_id"):
         try:
             store_id_val = int(extracted["store_id"])
@@ -1656,9 +1515,19 @@ def predict_trucks_and_cases(req: QueryRequest):
                     if isinstance(inferred_state, str):
                         state_name = inferred_state.strip().upper()
                         extracted["state_name"] = state_name # Update extracted dict too
-                        print(f"=== DEBUG: Inferred state {state_name} from store_id {store_id_val}")
+                        print(f"=== DEBUG: Successfully inferred state {state_name} from store_id {store_id_val}")
+                    else:
+                        debug_msg = f"State found but not string: {type(inferred_state)}"
+                else:
+                    debug_msg = f"Store {store_id_val} not found in historical data"
+            else:
+                debug_msg = f"Missing columns in df_hist: {df_hist.columns.tolist()}"
         except Exception as e:
+            debug_msg = f"Error inferring state: {str(e)}"
             print(f"Error inferring state from store_id: {e}")
+    
+    if not state_name:
+        extracted["message"] = f"State could not be determined. {debug_msg}"
 
     # Check for irrelevant/general queries
     # If we have no location context and it's not a specific search
@@ -1668,7 +1537,7 @@ def predict_trucks_and_cases(req: QueryRequest):
         
         if not is_data_query:
             return PredictionResponse(
-                date="",
+                date=target_date.strftime("%Y-%m-%d"),
                 source="chat",
                 Cases=0.0,
                 trucks=0.0,
@@ -1676,17 +1545,17 @@ def predict_trucks_and_cases(req: QueryRequest):
                 store_id=None,
                 dept_id=None,
                 dept_name=None,
-                message="How can I help you today?",
-                raw_extracted={}
+                message=handle_general_query(user_query, conversation_history),
+                raw_extracted=extracted,
+                debug_info=date_log
             )
 
-    # Validate state/store/dept against available data
     # Validate state/store/dept against available data
     if state_name:
         state_upper = state_name.upper()
         if state_upper not in ALL_US_STATES:
             return PredictionResponse(
-                date="",
+                date=target_date.strftime("%Y-%m-%d"),
                 source="chat",
                 Cases=0.0,
                 trucks=0.0,
@@ -1695,12 +1564,13 @@ def predict_trucks_and_cases(req: QueryRequest):
                 dept_id=None,
                 dept_name=None,
                 message=f"Walmart does not operate in the state of {state_name}.",
-                raw_extracted={"invalid_state": state_name}
+                raw_extracted={"invalid_state": state_name},
+                debug_info=date_log
             )
         
         if state_upper not in STATES_WITH_DATA:
              return PredictionResponse(
-                date="",
+                date=target_date.strftime("%Y-%m-%d"),
                 source="chat",
                 Cases=0.0,
                 trucks=0.0,
@@ -1709,21 +1579,22 @@ def predict_trucks_and_cases(req: QueryRequest):
                 dept_id=None,
                 dept_name=None,
                 message=f"Walmart operates in {state_name} but is not available in the given data.",
-                raw_extracted={"state_no_data": state_name}
+                raw_extracted={"state_no_data": state_name},
+                debug_info=date_log
             )
 
     # 4) Check for State Breakdown Query (State present, but NO Store/Dept)
     # Important: Check this BEFORE applying defaults!
     if state_name and not extracted.get("store_id") and not extracted.get("dept_id"):
         # This is a state-level query -> generate breakdown
-        breakdown = get_state_breakdown(state_name, dt)
+        breakdown = get_state_breakdown(state_name, target_date)
 
         if breakdown:
             total_cases = sum(item["cases"] for item in breakdown)
             total_trucks = sum(item["trucks"] for item in breakdown)
 
             return PredictionResponse(
-                date=dt.isoformat(),
+                date=target_date.isoformat(),
                 source="breakdown",
                 Cases=total_cases,
                 trucks=total_trucks,
@@ -1733,7 +1604,8 @@ def predict_trucks_and_cases(req: QueryRequest):
                 dept_name=None,
                 message=f"Found {len(breakdown)} records for {state_name}",
                 raw_extracted=extracted,
-                breakdown_data=breakdown
+                breakdown_data=breakdown,
+                debug_info=date_log
             )
 
     # Apply defaults for store/dept when missing but state is known
@@ -1749,7 +1621,7 @@ def predict_trucks_and_cases(req: QueryRequest):
     # Validate store/dept if provided
     if extracted.get("store_id") and VALID_STORES and extracted["store_id"] not in VALID_STORES:
         return PredictionResponse(
-            date="",
+            date=target_date.strftime("%Y-%m-%d"),
             source="chat",
             Cases=0.0,
             trucks=0.0,
@@ -1758,12 +1630,13 @@ def predict_trucks_and_cases(req: QueryRequest):
             dept_id=extracted.get("dept_id"),
             dept_name=extracted.get("dept_desc"),
             message="The requested store_id is not in the data.",
-            raw_extracted={"invalid_store_id": extracted.get("store_id")}
+            raw_extracted={"invalid_store_id": extracted.get("store_id")},
+            debug_info=date_log
         )
 
     if extracted.get("dept_id") and VALID_DEPTS and extracted["dept_id"] not in VALID_DEPTS:
         return PredictionResponse(
-            date="",
+            date=target_date.strftime("%Y-%m-%d"),
             source="chat",
             Cases=0.0,
             trucks=0.0,
@@ -1772,7 +1645,8 @@ def predict_trucks_and_cases(req: QueryRequest):
             dept_id=extracted.get("dept_id"),
             dept_name=extracted.get("dept_desc"),
             message="The requested dept_id is not in the data.",
-            raw_extracted={"invalid_dept_id": extracted.get("dept_id")}
+            raw_extracted={"invalid_dept_id": extracted.get("dept_id")},
+            debug_info=date_log
         )
 
     # Check for search queries like "are there 4 trucks" without specific date
@@ -1811,6 +1685,7 @@ def predict_trucks_and_cases(req: QueryRequest):
                     dept_id=search_dept_id,
                     dept_name=search_dept_desc,
                     raw_extracted={"dt": future_dt.isoformat(), "state_name": state_name, "store_id": extracted.get("store_id"), "dept_id": extracted.get("dept_id"), "dept_desc": extracted.get("dept_desc"), "searched": True},
+                    debug_info=date_log
                 )
 
             # Check model prediction
@@ -1838,13 +1713,14 @@ def predict_trucks_and_cases(req: QueryRequest):
                     dept_id=model_dept_id,
                     dept_name=model_dept_desc,
                     raw_extracted={"dt": future_dt.isoformat(), "state_name": state_name, "store_id": extracted.get("store_id"), "dept_id": extracted.get("dept_id"), "dept_desc": extracted.get("dept_desc"), "searched": True},
+                    debug_info=date_log
                 )
 
         # If not found, continue with default date
 
     # 4) Historical check
     hist = get_historical_values_if_available(
-        dt,
+        target_date,
         state_name=state_name,
         store_id=extracted.get("store_id"),
         dept_id=extracted.get("dept_id")
@@ -1862,7 +1738,7 @@ def predict_trucks_and_cases(req: QueryRequest):
             hist_dept_desc = hist_dept_desc or defaults.get("dept_desc")
 
         return PredictionResponse(
-            date=dt.isoformat(),
+            date=target_date.isoformat(),
             source="historical",
             Cases=hist["cases"],
             trucks=hist["trucks"],
@@ -1871,11 +1747,12 @@ def predict_trucks_and_cases(req: QueryRequest):
             dept_id=hist_dept_id,
             dept_name=hist_dept_desc,
             raw_extracted={"dt": extracted.get("dt"), "state_name": state_name, "store_id": extracted.get("store_id"), "dept_id": extracted.get("dept_id"), "dept_desc": extracted.get("dept_desc")},
+            debug_info=date_log
         )
 
     # 5) Model prediction
     try:
-        feat_row = build_feature_row(dt, state_name)
+        feat_row = build_feature_row(target_date, state_name)
         preds = predict_with_models(feat_row)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model prediction error: {type(e).__name__}: {str(e)}")
@@ -1905,7 +1782,7 @@ def predict_trucks_and_cases(req: QueryRequest):
     final_state = state_name
 
     return PredictionResponse(
-        date=dt.isoformat(),
+        date=target_date.isoformat(),
         source="model",
         Cases=preds["cases"],
         trucks=preds["trucks"],
@@ -1914,6 +1791,7 @@ def predict_trucks_and_cases(req: QueryRequest):
         dept_id=final_dept_id,
         dept_name=final_dept_desc,
         raw_extracted={"dt": extracted.get("dt"), "state_name": state_name, "store_id": extracted.get("store_id"), "dept_id": extracted.get("dept_id"), "dept_desc": extracted.get("dept_desc")},
+        debug_info=date_log
     )
 
 @app.get("/health")
@@ -1925,4 +1803,3 @@ def health_check():
 def root():
     """Root endpoint to verify API is running"""
     return {"message": "Agentic Forecast API is running. Use /predict for predictions."}
-
